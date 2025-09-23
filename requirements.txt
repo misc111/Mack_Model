@@ -1,0 +1,4 @@
+Flask>=3.0
+chainladder>=0.8.24
+numpy>=1.25
+pandas>=2.1
