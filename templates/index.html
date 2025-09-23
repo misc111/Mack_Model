@@ -46,6 +46,14 @@
                                         {% endfor %}
                                     </select>
                                 </div>
+                                <div class="col-12">
+                                    <label class="form-label" for="min-origin">Oldest Origin</label>
+                                    <select class="form-select" id="min-origin" name="min_origin"></select>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label" for="max-origin">Newest Origin</label>
+                                    <select class="form-select" id="max-origin" name="max_origin"></select>
+                                </div>
                                 <div class="col-12 d-grid">
                                     <button class="btn btn-primary" type="submit">Run Mack Analysis</button>
                                 </div>
@@ -85,6 +93,66 @@
             </section>
 
             <section class="mb-5">
+                <div class="row g-4">
+                    <div class="col-lg-8">
+                        <div class="card border-0 shadow-sm h-100">
+                            <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Cumulative Triangle</h5>
+                                <span class="badge bg-primary" id="dataset-badge">—</span>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-striped align-middle text-end" id="triangle-table">
+                                        <thead class="table-primary" id="triangle-table-head"></thead>
+                                        <tbody id="triangle-table-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="card border-0 shadow-sm h-100">
+                            <div class="card-header bg-white border-0">
+                                <h5 class="card-title mb-0">Age-to-Age Factors</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle" id="ldf-table">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th scope="col">From</th>
+                                                <th scope="col">To</th>
+                                                <th scope="col" class="text-end">Factor</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ldf-table-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card border-0 shadow-sm h-100 mt-4">
+                            <div class="card-header bg-white border-0">
+                                <h5 class="card-title mb-0">Cumulative Development Factors</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle" id="cdf-table">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th scope="col">Age</th>
+                                                <th scope="col" class="text-end">Factor</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="cdf-table-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="mb-5">
                 <div class="card border-0 shadow-sm">
                     <div class="card-header bg-white border-0">
                         <h5 class="card-title mb-0">Linearity &amp; Variance Diagnostics</h5>
@@ -115,26 +183,17 @@
                 </div>
             </section>
 
-            <section>
+            <section class="mb-5">
                 <div class="card border-0 shadow-sm">
                     <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
-                        <h5 class="card-title mb-0">Origin Year Detail</h5>
-                        <span class="badge bg-primary" id="dataset-badge">—</span>
+                        <h5 class="card-title mb-0">Assumption 1 Test: Linearity</h5>
+                        <select class="form-select form-select-sm w-auto" id="linearity-pair-select"></select>
                     </div>
                     <div class="card-body">
-                        <div id="origin-chart" class="chart mb-4"></div>
-                        <div class="table-responsive">
-                            <table class="table table-striped table-hover">
-                                <thead class="table-primary">
-                                    <tr>
-                                        <th scope="col">Origin</th>
-                                        <th scope="col">Ultimate</th>
-                                        <th scope="col">Std. Error</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="origin-table-body"></tbody>
-                            </table>
-                        </div>
+                        <div id="linearity-plot" class="chart mb-3"></div>
+                        <p class="text-muted small" id="linearity-summary">
+                            Select a development pair to view cumulative losses versus next-age losses with the Mack volume-weighted factor.
+                        </p>
                     </div>
                 </div>
             </section>
