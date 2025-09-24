@@ -41,6 +41,93 @@ class LinearityPair:
     line: List[Dict[str, float]]
 
 
+@dataclass(frozen=True)
+class ConfidenceInterval:
+    level: float
+    lower: Optional[float]
+    upper: Optional[float]
+
+
+@dataclass(frozen=True)
+class AssumptionStatus:
+    assumption_id: str
+    title: str
+    status: str
+    message: str
+
+
+@dataclass(frozen=True)
+class LinearitySpearmanPair:
+    label: str
+    from_age: str
+    to_age: str
+    observations: int
+    spearman_rho: Optional[float]
+    t_statistic: Optional[float]
+
+
+@dataclass(frozen=True)
+class LinearityTestSummary:
+    statistic: Optional[float]
+    weights: Optional[float]
+    intervals: List[ConfidenceInterval]
+    pairs: List[LinearitySpearmanPair]
+
+
+@dataclass(frozen=True)
+class CalendarDiagonalSummary:
+    label: str
+    large: int
+    small: int
+    total: int
+
+
+@dataclass(frozen=True)
+class CalendarHeatmapCell:
+    age_label: str
+    classification: Optional[str]
+
+
+@dataclass(frozen=True)
+class CalendarHeatmapRow:
+    origin: str
+    cells: List[CalendarHeatmapCell]
+
+
+@dataclass(frozen=True)
+class CalendarYearTestSummary:
+    statistic: Optional[float]
+    degrees_of_freedom: Optional[int]
+    intervals: List[ConfidenceInterval]
+    diagonals: List[CalendarDiagonalSummary]
+    heatmap: List[CalendarHeatmapRow]
+
+
+@dataclass(frozen=True)
+class ResidualPoint:
+    x: float
+    residual: float
+    scaled: Optional[float]
+
+
+@dataclass(frozen=True)
+class VarianceAssumptionResiduals:
+    assumption_id: str
+    title: str
+    factor: Optional[float]
+    residual_std: Optional[float]
+    scaled_residual_std: Optional[float]
+    residuals: List[ResidualPoint]
+
+
+@dataclass(frozen=True)
+class VarianceComparison:
+    label: str
+    age: str
+    next_age: str
+    assumptions: List[VarianceAssumptionResiduals]
+
+
 @dataclass
 class UltimateSummary:
     dataset_key: str
@@ -58,3 +145,7 @@ class UltimateSummary:
     ldf_table: List[Dict[str, Optional[float]]]
     cdf_table: List[Dict[str, Optional[float]]]
     linearity_pairs: List[LinearityPair]
+    assumption_cards: List[AssumptionStatus]
+    linearity_test: LinearityTestSummary
+    calendar_test: CalendarYearTestSummary
+    variance_comparisons: List[VarianceComparison]

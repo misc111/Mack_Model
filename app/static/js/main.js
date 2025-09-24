@@ -6,10 +6,15 @@ import {
     renderLinearityPlot,
     renderLinearitySelect,
     renderMainGrid,
+    renderAssumptionHealth,
+    renderCalendarTest,
     updateDatasetBadge,
     updateDiagnosticsTable,
     updateEditableCell,
+    updateLinearityTest,
     updateSummaryCards,
+    renderVarianceOptions,
+    renderVariancePlots,
 } from './ui.js';
 
 const appState = {
@@ -20,6 +25,11 @@ const appState = {
     overrides: {},
     linearityPairs: [],
     selectedPairLabel: '',
+    assumptionCards: [],
+    linearityTest: null,
+    calendarTest: null,
+    varianceComparisons: [],
+    selectedVarianceLabel: '',
     endpoints: {
         summary: '',
         recalc: '',
@@ -84,6 +94,19 @@ function updateLinearitySelection(pairs) {
     renderLinearityPlot(currentPair);
 }
 
+function updateVarianceSelection(comparisons) {
+    const available = Array.isArray(comparisons) ? comparisons : [];
+    renderVarianceOptions(available, appState.selectedVarianceLabel, (label) => {
+        appState.selectedVarianceLabel = label;
+        const nextComparison = available.find((item) => item.label === label) || null;
+        renderVariancePlots(nextComparison);
+    });
+
+    const resolved = available.find((item) => item.label === appState.selectedVarianceLabel) || available[0] || null;
+    appState.selectedVarianceLabel = resolved ? resolved.label : '';
+    renderVariancePlots(resolved);
+}
+
 function applySummary(data) {
     if (!data) return;
     appState.dataset = data.dataset_key || appState.dataset;
@@ -92,13 +115,23 @@ function applySummary(data) {
     appState.maxOrigin = data.selected_max_origin || null;
     appState.overrides = buildOverridesFromTriangle(data.main_grid);
     appState.linearityPairs = Array.isArray(data.linearity_pairs) ? data.linearity_pairs.slice() : [];
+    appState.assumptionCards = Array.isArray(data.assumption_cards) ? data.assumption_cards.slice() : [];
+    appState.linearityTest = data.linearity_test || null;
+    appState.calendarTest = data.calendar_test || null;
+    appState.varianceComparisons = Array.isArray(data.variance_comparisons)
+        ? data.variance_comparisons.slice()
+        : [];
 
     populateOriginSelectors(appState.origins, appState.minOrigin, appState.maxOrigin);
     updateSummaryCards(data);
     renderMainGrid(data.main_grid, { onCellEdit: handleCellEdit });
     updateDiagnosticsTable(data.diagnostics);
+    renderAssumptionHealth(appState.assumptionCards);
+    updateLinearityTest(appState.linearityTest);
+    renderCalendarTest(appState.calendarTest);
     updateDatasetBadge(data.dataset_label);
     updateLinearitySelection(appState.linearityPairs);
+    updateVarianceSelection(appState.varianceComparisons);
 
     const datasetSelect = document.getElementById('dataset');
     if (datasetSelect && data.dataset_key) {

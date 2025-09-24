@@ -13,6 +13,12 @@ def _serialise_summary(summary) -> Dict[str, Any]:
     summary_dict = asdict(summary)
     summary_dict["diagnostics"] = [asdict(diag) for diag in summary.diagnostics]
     summary_dict["linearity_pairs"] = [asdict(pair) for pair in summary.linearity_pairs]
+    summary_dict["assumption_cards"] = [asdict(card) for card in summary.assumption_cards]
+    summary_dict["linearity_test"] = asdict(summary.linearity_test)
+    summary_dict["calendar_test"] = asdict(summary.calendar_test)
+    summary_dict["variance_comparisons"] = [
+        asdict(comparison) for comparison in summary.variance_comparisons
+    ]
     return summary_dict
 
 

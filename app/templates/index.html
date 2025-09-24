@@ -141,52 +141,230 @@
                 </div>
             </section>
 
-            <section class="worksheet-diagnostics mb-5">
-                <div class="card shadow-sm">
+            <section class="worksheet-assumption-health mb-5">
+                <div class="card assumption-health-card shadow-sm">
                     <div class="card-header d-flex align-items-center gap-2">
-                        <i class="bi bi-clipboard-data"></i>
-                        <h2 class="card-title mb-0">Linearity &amp; Variance Diagnostics</h2>
+                        <i class="bi bi-activity"></i>
+                        <h2 class="card-title mb-0">Mack Assumption Health</h2>
                     </div>
                     <div class="card-body">
-                        <p class="text-secondary small" id="diagnostic-note">
-                            Reload a dataset to refresh diagnostics and assess whether Mack's core assumptions hold across development steps.
+                        <p class="text-secondary small" id="assumption-health-note">
+                            Each assumption is updated whenever you adjust the triangle. Click into the tabs below for supporting diagnostics.
                         </p>
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0" id="diagnostics-table">
-                                <thead>
-                                    <tr>
-                                        <th scope="col">Development Pair</th>
-                                        <th scope="col">Obs</th>
-                                        <th scope="col">Factor</th>
-                                        <th scope="col">Intercept</th>
-                                        <th scope="col">|Intercept| / Mean</th>
-                                        <th scope="col">R²</th>
-                                        <th scope="col">Mean Residual %</th>
-                                        <th scope="col">Corr(res², Prev)</th>
-                                        <th scope="col">Std(res/√prev)</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="diagnostics-table-body"></tbody>
-                            </table>
-                        </div>
+                        <div class="row g-3" id="assumption-health-list"></div>
                     </div>
                 </div>
             </section>
 
-            <section class="worksheet-linearity">
+            <section class="worksheet-analysis mb-5">
                 <div class="card shadow-sm">
-                    <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-3">
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="bi bi-braces"></i>
-                            <h2 class="card-title mb-0">Assumption 1: Linearity Check</h2>
-                        </div>
-                        <select class="form-select form-select-sm w-auto" id="linearity-pair-select"></select>
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs" id="diagnostic-tab-list" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="linearity-tab-button" data-bs-toggle="tab" data-bs-target="#linearity-tab" type="button" role="tab" aria-controls="linearity-tab" aria-selected="true">
+                                    <i class="bi bi-braces"></i>
+                                    <span class="ms-1">Linearity</span>
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="independence-tab-button" data-bs-toggle="tab" data-bs-target="#independence-tab" type="button" role="tab" aria-controls="independence-tab" aria-selected="false">
+                                    <i class="bi bi-diagram-3"></i>
+                                    <span class="ms-1">Independence</span>
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="variance-tab-button" data-bs-toggle="tab" data-bs-target="#variance-tab" type="button" role="tab" aria-controls="variance-tab" aria-selected="false">
+                                    <i class="bi bi-sliders"></i>
+                                    <span class="ms-1">Variance</span>
+                                </button>
+                            </li>
+                        </ul>
                     </div>
                     <div class="card-body">
-                        <div id="linearity-plot" class="chart mb-3"></div>
-                        <p class="text-secondary small" id="linearity-summary">
-                            Select a development pair to view cumulative losses versus next-age losses with the Mack volume-weighted factor.
-                        </p>
+                        <div class="tab-content" id="diagnostic-tabs">
+                            <div class="tab-pane fade show active" id="linearity-tab" role="tabpanel" aria-labelledby="linearity-tab-button">
+                                <div class="mb-4">
+                                    <div class="d-flex align-items-center gap-2 mb-3">
+                                        <i class="bi bi-graph-up"></i>
+                                        <h3 class="h5 mb-0">Spearman Correlation Test</h3>
+                                    </div>
+                                    <div class="row g-3 mb-4" id="linearity-test-summary">
+                                        <div class="col-md-4">
+                                            <div class="mini-metric" id="linearity-test-statistic">
+                                                <p class="mini-metric-label text-uppercase">Statistic (T)</p>
+                                                <p class="mini-metric-value">—</p>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="mini-metric" id="linearity-test-interval-50">
+                                                <p class="mini-metric-label text-uppercase">50% Interval</p>
+                                                <p class="mini-metric-value">—</p>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="mini-metric" id="linearity-test-interval-95">
+                                                <p class="mini-metric-label text-uppercase">95% Interval</p>
+                                                <p class="mini-metric-value">—</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="table-responsive mb-4">
+                                        <table class="table table-sm align-middle" id="spearman-table">
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">Pair</th>
+                                                    <th scope="col">Obs</th>
+                                                    <th scope="col">Spearman ρ</th>
+                                                    <th scope="col">T<sub>k</sub></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="spearman-table-body"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="mb-4">
+                                    <div class="d-flex align-items-center gap-2 mb-3">
+                                        <i class="bi bi-clipboard-data"></i>
+                                        <h3 class="h5 mb-0">Development Diagnostics</h3>
+                                    </div>
+                                    <p class="text-secondary small" id="diagnostic-note">
+                                        Reload a dataset to refresh diagnostics and assess whether Mack's core assumptions hold across development steps.
+                                    </p>
+                                    <div class="table-responsive">
+                                        <table class="table table-hover align-middle mb-0" id="diagnostics-table">
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">Development Pair</th>
+                                                    <th scope="col">Obs</th>
+                                                    <th scope="col">Factor</th>
+                                                    <th scope="col">Intercept</th>
+                                                    <th scope="col">|Intercept| / Mean</th>
+                                                    <th scope="col">R²</th>
+                                                    <th scope="col">Mean Residual %</th>
+                                                    <th scope="col">Corr(res², Prev)</th>
+                                                    <th scope="col">Std(res/√prev)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="diagnostics-table-body"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <i class="bi bi-collection"></i>
+                                            <h3 class="h5 mb-0">Graphical Linearity Check</h3>
+                                        </div>
+                                        <select class="form-select form-select-sm w-auto" id="linearity-pair-select"></select>
+                                    </div>
+                                    <div id="linearity-plot" class="chart mb-3"></div>
+                                    <p class="text-secondary small" id="linearity-summary">
+                                        Select a development pair to view cumulative losses versus next-age losses with the Mack volume-weighted factor.
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="tab-pane fade" id="independence-tab" role="tabpanel" aria-labelledby="independence-tab-button">
+                                <div class="mb-4">
+                                    <div class="d-flex align-items-center gap-2 mb-3">
+                                        <i class="bi bi-calendar4-week"></i>
+                                        <h3 class="h5 mb-0">Calendar Year Test</h3>
+                                    </div>
+                                    <div class="row g-3" id="calendar-test-summary">
+                                        <div class="col-md-4">
+                                            <div class="mini-metric" id="calendar-test-statistic">
+                                                <p class="mini-metric-label text-uppercase">Statistic (Z)</p>
+                                                <p class="mini-metric-value">—</p>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="mini-metric" id="calendar-test-interval">
+                                                <p class="mini-metric-label text-uppercase">95% Interval</p>
+                                                <p class="mini-metric-value">—</p>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="mini-metric" id="calendar-test-df">
+                                                <p class="mini-metric-label text-uppercase">Diagonals</p>
+                                                <p class="mini-metric-value">—</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mb-4">
+                                    <div class="d-flex align-items-center gap-2 mb-3">
+                                        <i class="bi bi-list-check"></i>
+                                        <h3 class="h5 mb-0">Diagonal Breakdown</h3>
+                                    </div>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle" id="calendar-diagonals-table">
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">Calendar</th>
+                                                    <th scope="col">Large (L)</th>
+                                                    <th scope="col">Small (S)</th>
+                                                    <th scope="col">Total</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="calendar-diagonals-body"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="d-flex align-items-center gap-2 mb-3">
+                                        <i class="bi bi-grid-3x3-gap"></i>
+                                        <h3 class="h5 mb-0">Calendar Heatmap</h3>
+                                    </div>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm text-center mb-0" id="calendar-heatmap-table">
+                                            <thead>
+                                                <tr id="calendar-heatmap-head"></tr>
+                                            </thead>
+                                            <tbody id="calendar-heatmap-body"></tbody>
+                                        </table>
+                                    </div>
+                                    <p class="text-secondary small mt-2" id="calendar-heatmap-note">
+                                        Cells are coloured by classification within their development column: large (L), small (S), or median (M).
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="tab-pane fade" id="variance-tab" role="tabpanel" aria-labelledby="variance-tab-button">
+                                <div class="mb-3">
+                                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-2">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <i class="bi bi-sliders"></i>
+                                            <h3 class="h5 mb-0">Residual Comparison</h3>
+                                        </div>
+                                        <select class="form-select form-select-sm w-auto" id="variance-select"></select>
+                                    </div>
+                                    <p class="text-secondary small" id="variance-guidance">
+                                        Compare residual scatter for each variance assumption. Random scatter suggests a good fit; funnel shapes indicate a mismatch.
+                                    </p>
+                                </div>
+                                <div class="row g-4" id="variance-plot-row">
+                                    <div class="col-12 col-lg-4">
+                                        <div class="variance-card">
+                                            <h4 class="h6 mb-2">var ∝ 1</h4>
+                                            <div class="chart variance-plot" id="variance-plot-const"></div>
+                                            <p class="text-secondary small" id="variance-summary-const"></p>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-lg-4">
+                                        <div class="variance-card">
+                                            <h4 class="h6 mb-2">var ∝ C<sub>ik</sub></h4>
+                                            <div class="chart variance-plot" id="variance-plot-linear"></div>
+                                            <p class="text-secondary small" id="variance-summary-linear"></p>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-lg-4">
+                                        <div class="variance-card">
+                                            <h4 class="h6 mb-2">var ∝ C<sub>ik</sub><sup>2</sup></h4>
+                                            <div class="chart variance-plot" id="variance-plot-quadratic"></div>
+                                            <p class="text-secondary small" id="variance-summary-quadratic"></p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>

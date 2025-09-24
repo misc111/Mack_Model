@@ -14,6 +14,26 @@ const decimalFormatter = new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 2,
 });
 
+function formatInterval(lower, upper, formatter = formatDecimal) {
+    if (!Number.isFinite(lower) || !Number.isFinite(upper)) return '—';
+    return `(${formatter(lower)}, ${formatter(upper)})`;
+}
+
+const statusMeta = {
+    pass: {
+        label: 'Passed',
+        icon: 'bi-check-circle-fill',
+    },
+    review: {
+        label: 'Review',
+        icon: 'bi-exclamation-circle-fill',
+    },
+    fail: {
+        label: 'Failed',
+        icon: 'bi-x-circle-fill',
+    },
+};
+
 export function formatCurrency(value) {
     if (!Number.isFinite(value)) return '—';
     return `$${currencyFormatter.format(value)}`;
@@ -102,6 +122,44 @@ export function updateSummaryCards(data) {
             noteNode.textContent = 'Approximate 95% normal interval: unavailable (zero standard error).';
         }
     }
+}
+
+export function renderAssumptionHealth(cards = []) {
+    const container = document.getElementById('assumption-health-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!cards.length) {
+        const col = document.createElement('div');
+        col.classList.add('col-12');
+        col.innerHTML = '<p class="text-muted small mb-0">Assumption diagnostics unavailable. Run Mack to populate this section.</p>';
+        container.appendChild(col);
+        return;
+    }
+
+    cards.forEach((card) => {
+        const status = statusMeta[card.status] ? card.status : 'review';
+        const meta = statusMeta[status];
+        const col = document.createElement('div');
+        col.classList.add('col-12', 'col-md-4');
+
+        const pill = document.createElement('div');
+        pill.classList.add('assumption-pill', `status-${status}`);
+
+        pill.innerHTML = `
+            <div class="assumption-pill-header">
+                <span class="assumption-pill-status">
+                    <i class="bi ${meta.icon}"></i>
+                    <span>${meta.label}</span>
+                </span>
+                <span class="assumption-pill-title">${card.title || ''}</span>
+            </div>
+            <p class="assumption-pill-message">${card.message || ''}</p>
+        `;
+
+        col.appendChild(pill);
+        container.appendChild(col);
+    });
 }
 
 function makeTrianglePlaceholder(body, columnCount) {
@@ -264,6 +322,60 @@ export function updateDiagnosticsTable(diagnostics) {
     });
 }
 
+function findInterval(linearityTest, level) {
+    if (!linearityTest || !Array.isArray(linearityTest.intervals)) return null;
+    return linearityTest.intervals.find((interval) => interval.level === level) || null;
+}
+
+export function updateLinearityTest(linearityTest) {
+    const statNode = document.querySelector('#linearity-test-statistic .mini-metric-value');
+    const interval50Node = document.querySelector('#linearity-test-interval-50 .mini-metric-value');
+    const interval95Node = document.querySelector('#linearity-test-interval-95 .mini-metric-value');
+    const tableBody = document.getElementById('spearman-table-body');
+
+    if (statNode) {
+        statNode.textContent = Number.isFinite(linearityTest?.statistic)
+            ? formatDecimal(linearityTest.statistic)
+            : '—';
+    }
+
+    if (interval50Node) {
+        const interval = findInterval(linearityTest, 0.5);
+        interval50Node.textContent = interval
+            ? formatInterval(interval.lower, interval.upper, formatDecimal)
+            : '—';
+    }
+
+    if (interval95Node) {
+        const interval = findInterval(linearityTest, 0.95);
+        interval95Node.textContent = interval
+            ? formatInterval(interval.lower, interval.upper, formatDecimal)
+            : '—';
+    }
+
+    if (!tableBody) return;
+    tableBody.innerHTML = '';
+
+    const pairs = linearityTest?.pairs || [];
+    if (!pairs.length) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="4" class="text-center text-muted">Spearman ranks unavailable.</td>';
+        tableBody.appendChild(row);
+        return;
+    }
+
+    pairs.forEach((pair) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${pair.label}</td>
+            <td>${pair.observations}</td>
+            <td>${formatDecimal(pair.spearman_rho)}</td>
+            <td>${formatDecimal(pair.t_statistic)}</td>
+        `;
+        tableBody.appendChild(row);
+    });
+}
+
 export function updateDatasetBadge(datasetLabel) {
     const badge = document.getElementById('dataset-badge');
     if (badge) {
@@ -276,6 +388,100 @@ export function setLinearitySummaryText(content) {
     if (summaryNode) {
         summaryNode.textContent = content;
     }
+}
+
+export function renderCalendarTest(calendarTest) {
+    const statNode = document.querySelector('#calendar-test-statistic .mini-metric-value');
+    const intervalNode = document.querySelector('#calendar-test-interval .mini-metric-value');
+    const dfNode = document.querySelector('#calendar-test-df .mini-metric-value');
+    const diagonalsBody = document.getElementById('calendar-diagonals-body');
+    const heatmapHead = document.getElementById('calendar-heatmap-head');
+    const heatmapBody = document.getElementById('calendar-heatmap-body');
+
+    if (statNode) {
+        statNode.textContent = Number.isFinite(calendarTest?.statistic)
+            ? formatDecimal(calendarTest.statistic)
+            : '—';
+    }
+
+    if (intervalNode) {
+        const interval = calendarTest?.intervals?.[0];
+        intervalNode.textContent = interval
+            ? formatInterval(interval.lower, interval.upper, formatDecimal)
+            : '—';
+    }
+
+    if (dfNode) {
+        dfNode.textContent = Number.isFinite(calendarTest?.degrees_of_freedom)
+            ? String(calendarTest.degrees_of_freedom)
+            : '—';
+    }
+
+    if (diagonalsBody) {
+        diagonalsBody.innerHTML = '';
+        const diagonals = calendarTest?.diagonals || [];
+        if (!diagonals.length) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="4" class="text-center text-muted">No diagonals available.</td>';
+            diagonalsBody.appendChild(row);
+        } else {
+            diagonals.forEach((diag) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${diag.label}</td>
+                    <td>${diag.large}</td>
+                    <td>${diag.small}</td>
+                    <td>${diag.total}</td>
+                `;
+                diagonalsBody.appendChild(row);
+            });
+        }
+    }
+
+    if (!heatmapHead || !heatmapBody) return;
+    heatmapHead.innerHTML = '';
+    heatmapBody.innerHTML = '';
+
+    const heatmapRows = calendarTest?.heatmap || [];
+    if (!heatmapRows.length) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td class="text-center text-muted">Heatmap unavailable.</td>';
+        heatmapBody.appendChild(row);
+        return;
+    }
+
+    const ageLabels = heatmapRows[0]?.cells?.map((cell) => cell.age_label) || [];
+    const originHeader = document.createElement('th');
+    originHeader.scope = 'col';
+    originHeader.textContent = 'Origin';
+    heatmapHead.appendChild(originHeader);
+    ageLabels.forEach((label) => {
+        const th = document.createElement('th');
+        th.scope = 'col';
+        th.textContent = label || '';
+        heatmapHead.appendChild(th);
+    });
+
+    heatmapRows.forEach((rowData) => {
+        const tr = document.createElement('tr');
+        const th = document.createElement('th');
+        th.scope = 'row';
+        th.textContent = rowData.origin || '';
+        tr.appendChild(th);
+
+        (rowData.cells || []).forEach((cell) => {
+            const td = document.createElement('td');
+            const classification = cell?.classification || '';
+            td.textContent = classification || '—';
+            if (classification) {
+                td.classList.add('heatmap-cell', `heatmap-${classification.toLowerCase()}`);
+            } else {
+                td.classList.add('heatmap-cell');
+            }
+            tr.appendChild(td);
+        });
+        heatmapBody.appendChild(tr);
+    });
 }
 
 export function renderLinearitySelect(pairs, selectedLabel, onChange) {
@@ -367,6 +573,97 @@ export function renderLinearityPlot(pair) {
         `Mean residual %: ${formatPercent(pair.residual_mean_ratio)}`,
     ];
     setLinearitySummaryText(pieces.join(' · '));
+}
+
+export function renderVarianceOptions(comparisons, selectedLabel, onChange) {
+    const select = document.getElementById('variance-select');
+    if (!select) return;
+
+    select.innerHTML = '';
+    if (!comparisons || !comparisons.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Insufficient data';
+        select.appendChild(option);
+        select.disabled = true;
+        if (typeof onChange === 'function') select.onchange = null;
+        return;
+    }
+
+    comparisons.forEach((comparison) => {
+        const option = document.createElement('option');
+        option.value = comparison.label;
+        option.textContent = comparison.label;
+        select.appendChild(option);
+    });
+
+    const resolved = comparisons.some((item) => item.label === selectedLabel)
+        ? selectedLabel
+        : comparisons[0].label;
+    select.value = resolved;
+    select.disabled = false;
+    if (typeof onChange === 'function') {
+        select.onchange = (event) => onChange(event.target.value);
+    }
+}
+
+function describeVarianceSummary(result) {
+    if (!result) return 'Residuals unavailable for this assumption.';
+    const pieces = [];
+    if (Number.isFinite(result.residual_std)) {
+        pieces.push(`Std(res): ${formatDecimal(result.residual_std)}`);
+    }
+    if (Number.isFinite(result.scaled_residual_std)) {
+        pieces.push(`Std(normalised): ${formatDecimal(result.scaled_residual_std)}`);
+    }
+    return pieces.length ? pieces.join(' · ') : 'Residuals unavailable for this assumption.';
+}
+
+export function renderVariancePlots(comparison) {
+    const mapping = [
+        { id: 'var_const', plotId: 'variance-plot-const', summaryId: 'variance-summary-const', label: 'Residual' },
+        { id: 'var_linear', plotId: 'variance-plot-linear', summaryId: 'variance-summary-linear', label: 'Residual' },
+        { id: 'var_quadratic', plotId: 'variance-plot-quadratic', summaryId: 'variance-summary-quadratic', label: 'Residual' },
+    ];
+
+    mapping.forEach(({ id, plotId, summaryId }) => {
+        const assumption = comparison?.assumptions?.find((item) => item.assumption_id === id) || null;
+        const container = document.getElementById(plotId);
+        const summaryNode = document.getElementById(summaryId);
+
+        if (summaryNode) {
+            summaryNode.textContent = describeVarianceSummary(assumption);
+        }
+
+        if (!container || !window.Plotly) return;
+        if (!assumption || !Array.isArray(assumption.residuals) || !assumption.residuals.length) {
+            window.Plotly.purge(container);
+            return;
+        }
+
+        const trace = {
+            type: 'scatter',
+            mode: 'markers',
+            x: assumption.residuals.map((point) => point.x),
+            y: assumption.residuals.map((point) => point.residual),
+            marker: {
+                color: '#0d6efd',
+                size: 7,
+                opacity: 0.85,
+            },
+            name: 'Residual',
+        };
+
+        const layout = {
+            margin: { l: 50, r: 20, t: 20, b: 50 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            xaxis: { title: 'C_{ik}', tickformat: '$,~s' },
+            yaxis: { title: 'Residual', tickformat: '$,~s' },
+        };
+
+        window.Plotly.newPlot(container, [trace], layout, { responsive: true, displaylogo: false });
+    });
 }
 
 export function updateEditableCell(cell, value) {

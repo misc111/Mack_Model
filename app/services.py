@@ -5,11 +5,24 @@ import chainladder as cl
 import numpy as np
 import pandas as pd
 
+from scipy.stats import chi2, norm
+
 from .models import (
+    AssumptionStatus,
+    CalendarDiagonalSummary,
+    CalendarHeatmapCell,
+    CalendarHeatmapRow,
+    CalendarYearTestSummary,
+    ConfidenceInterval,
     DatasetOption,
     DevelopmentDiagnostic,
     LinearityPair,
+    LinearitySpearmanPair,
+    LinearityTestSummary,
+    ResidualPoint,
     UltimateSummary,
+    VarianceAssumptionResiduals,
+    VarianceComparison,
 )
 
 
@@ -369,6 +382,480 @@ def compute_development_diagnostics(
     return diagnostics, ldf_table, cdf_table, linearity_pairs
 
 
+def compute_linearity_spearman(triangle: cl.Triangle) -> LinearityTestSummary:
+    wide = triangle.to_frame()
+    try:
+        wide = wide.sort_index()
+    except Exception:
+        pass
+
+    development_cols = list(wide.columns)
+    spearman_pairs: List[LinearitySpearmanPair] = []
+    total_weight = 0.0
+    weighted_sum = 0.0
+
+    for current_age, next_age, following_age in zip(
+        development_cols[:-2], development_cols[1:-1], development_cols[2:]
+    ):
+        subset = wide[[current_age, next_age, following_age]].dropna()
+        if subset.empty:
+            continue
+
+        x_prev = subset[current_age].to_numpy(dtype=float)
+        x_curr = subset[next_age].to_numpy(dtype=float)
+        x_next = subset[following_age].to_numpy(dtype=float)
+
+        valid_mask = np.isfinite(x_prev) & np.isfinite(x_curr) & np.isfinite(x_next) & (x_prev != 0) & (x_curr != 0)
+        if not valid_mask.any():
+            continue
+        x_prev = x_prev[valid_mask]
+        x_curr = x_curr[valid_mask]
+        x_next = x_next[valid_mask]
+        if x_prev.size < 3:
+            continue
+
+        factors_current = x_curr / x_prev
+        factors_next = x_next / x_curr
+
+        finite_mask = np.isfinite(factors_current) & np.isfinite(factors_next)
+        factors_current = factors_current[finite_mask]
+        factors_next = factors_next[finite_mask]
+        observations = int(factors_current.size)
+        if observations < 3:
+            continue
+
+        series_current = pd.Series(factors_current)
+        series_next = pd.Series(factors_next)
+        ranks_current = series_current.rank(method="average")
+        ranks_next = series_next.rank(method="average")
+        rho = ranks_current.corr(ranks_next)
+
+        weight = max(observations - 1, 0)
+        if weight > 0 and rho is not None and math.isfinite(rho):
+            t_k = rho * math.sqrt(weight)
+            weighted_sum += t_k
+            t_value = t_k
+        else:
+            t_value = float("nan")
+        total_weight += weight
+
+        spearman_pairs.append(
+            LinearitySpearmanPair(
+                label=f"{current_age} → {next_age}",
+                from_age=str(current_age),
+                to_age=str(next_age),
+                observations=observations,
+                spearman_rho=clean_numeric(float(rho)) if rho is not None else None,
+                t_statistic=clean_numeric(float(t_value)),
+            )
+        )
+
+    if total_weight > 0 and math.isfinite(weighted_sum):
+        statistic = weighted_sum / math.sqrt(total_weight)
+    else:
+        statistic = float("nan")
+
+    intervals: List[ConfidenceInterval] = []
+    if total_weight > 0:
+        scale = math.sqrt(total_weight)
+        for level in (0.50, 0.95):
+            percentile = (1.0 + level) / 2.0
+            z_value = norm.ppf(percentile)
+            bound = z_value / scale
+            intervals.append(
+                ConfidenceInterval(
+                    level=level,
+                    lower=clean_numeric(-bound),
+                    upper=clean_numeric(bound),
+                )
+            )
+
+    return LinearityTestSummary(
+        statistic=clean_numeric(statistic),
+        weights=clean_numeric(total_weight) if total_weight else None,
+        intervals=intervals,
+        pairs=spearman_pairs,
+    )
+
+
+def compute_calendar_year_test(triangle: cl.Triangle) -> CalendarYearTestSummary:
+    wide = triangle.to_frame()
+    try:
+        wide = wide.sort_index()
+    except Exception:
+        pass
+
+    development_cols = list(wide.columns)
+    freq = getattr(triangle.origin, "freqstr", None)
+    origins = list(wide.index)
+    origin_labels = {origin: format_origin_label(origin, freq) for origin in origins}
+
+    factor_labels: List[str] = []
+    classifications: Dict[str, Dict[str, Optional[str]]] = {
+        origin_labels.get(origin, str(origin)): {} for origin in origins
+    }
+    diagonal_counts: Dict[str, Dict[str, int]] = {}
+
+    for current_age, next_age in zip(development_cols[:-1], development_cols[1:]):
+        age_label = f"{current_age} → {next_age}"
+        factor_labels.append(age_label)
+
+        subset = wide[[current_age, next_age]].dropna()
+        if subset.empty:
+            continue
+
+        x_values = subset[current_age].to_numpy(dtype=float)
+        y_values = subset[next_age].to_numpy(dtype=float)
+        origin_values = subset.index
+
+        mask = np.isfinite(x_values) & np.isfinite(y_values) & (x_values != 0)
+        if not mask.any():
+            continue
+        x_values = x_values[mask]
+        y_values = y_values[mask]
+        origin_values = origin_values[mask]
+
+        factors = y_values / x_values
+        finite_mask = np.isfinite(factors)
+        if not finite_mask.any():
+            continue
+        factors = factors[finite_mask]
+        origin_values = origin_values[finite_mask]
+        if factors.size == 0:
+            continue
+
+        median_value = float(np.median(factors)) if factors.size else float("nan")
+
+        for origin_value, factor in zip(origin_values, factors):
+            origin_label = origin_labels.get(origin_value, format_origin_label(origin_value, freq))
+            if not math.isfinite(factor):
+                classifications.setdefault(origin_label, {})[age_label] = None
+                continue
+
+            if math.isfinite(median_value):
+                if factor > median_value:
+                    classification = "L"
+                elif factor < median_value:
+                    classification = "S"
+                else:
+                    classification = "M"
+            else:
+                classification = None
+
+            classifications.setdefault(origin_label, {})[age_label] = classification
+
+            calendar_timestamp = pd.Timestamp(origin_value) + pd.DateOffset(months=int(next_age))
+            calendar_period = calendar_timestamp.to_period("Y")
+            calendar_label = str(calendar_period)
+
+            counts = diagonal_counts.setdefault(calendar_label, {"L": 0, "S": 0})
+            if classification == "L":
+                counts["L"] += 1
+            elif classification == "S":
+                counts["S"] += 1
+
+    diagonals: List[CalendarDiagonalSummary] = []
+    statistic = 0.0
+    degrees = 0
+    for calendar_label in sorted(diagonal_counts.keys()):
+        counts = diagonal_counts[calendar_label]
+        large = int(counts.get("L", 0))
+        small = int(counts.get("S", 0))
+        total = large + small
+        if total > 0:
+            expected = total / 2.0
+            variance = total / 4.0
+            if variance > 0:
+                statistic += ((large - expected) ** 2) / variance
+                degrees += 1
+        diagonals.append(
+            CalendarDiagonalSummary(
+                label=calendar_label,
+                large=large,
+                small=small,
+                total=total,
+            )
+        )
+
+    intervals: List[ConfidenceInterval] = []
+    if degrees > 0:
+        lower = chi2.ppf(0.025, degrees)
+        upper = chi2.ppf(0.975, degrees)
+        intervals.append(
+            ConfidenceInterval(
+                level=0.95,
+                lower=clean_numeric(float(lower)),
+                upper=clean_numeric(float(upper)),
+            )
+        )
+
+    heatmap_rows: List[CalendarHeatmapRow] = []
+    for origin_value in origins:
+        origin_label = origin_labels.get(origin_value, format_origin_label(origin_value, freq))
+        cell_map = classifications.get(origin_label, {})
+        cells = [
+            CalendarHeatmapCell(
+                age_label=age_label,
+                classification=cell_map.get(age_label),
+            )
+            for age_label in factor_labels
+        ]
+        heatmap_rows.append(
+            CalendarHeatmapRow(
+                origin=origin_label,
+                cells=cells,
+            )
+        )
+
+    return CalendarYearTestSummary(
+        statistic=clean_numeric(statistic),
+        degrees_of_freedom=degrees or None,
+        intervals=intervals,
+        diagonals=diagonals,
+        heatmap=heatmap_rows,
+    )
+
+
+def compute_variance_comparisons(triangle: cl.Triangle) -> List[VarianceComparison]:
+    wide = triangle.to_frame()
+    try:
+        wide = wide.sort_index()
+    except Exception:
+        pass
+
+    development_cols = list(wide.columns)
+    comparisons: List[VarianceComparison] = []
+
+    for current_age, next_age in zip(development_cols[:-1], development_cols[1:]):
+        subset = wide[[current_age, next_age]].dropna()
+        if subset.empty:
+            continue
+
+        x_values = subset[current_age].to_numpy(dtype=float)
+        y_values = subset[next_age].to_numpy(dtype=float)
+        mask = np.isfinite(x_values) & np.isfinite(y_values) & (x_values > 0)
+        if not mask.any():
+            continue
+        x_values = x_values[mask]
+        y_values = y_values[mask]
+        if x_values.size < 3:
+            continue
+
+        def factor_const(var_x: np.ndarray, var_y: np.ndarray) -> float:
+            denominator = float(np.sum(var_x**2))
+            if denominator == 0.0:
+                return float("nan")
+            return float(np.sum(var_x * var_y) / denominator)
+
+        def factor_linear(var_x: np.ndarray, var_y: np.ndarray) -> float:
+            denominator = float(np.sum(var_x))
+            if denominator == 0.0:
+                return float("nan")
+            return float(np.sum(var_y) / denominator)
+
+        def factor_quadratic(var_x: np.ndarray, var_y: np.ndarray) -> float:
+            ratios = var_y / var_x
+            ratios = ratios[np.isfinite(ratios)]
+            if ratios.size == 0:
+                return float("nan")
+            return float(np.mean(ratios))
+
+        assumption_specs = [
+            ("var_const", "var ∝ 1", factor_const, 0.0),
+            ("var_linear", "var ∝ C_{ik}", factor_linear, 0.5),
+            ("var_quadratic", "var ∝ C_{ik}^2", factor_quadratic, 1.0),
+        ]
+
+        assumption_results: List[VarianceAssumptionResiduals] = []
+        for assumption_id, title, factor_func, scale_power in assumption_specs:
+            try:
+                factor_value = factor_func(x_values, y_values)
+            except Exception:
+                factor_value = float("nan")
+
+            if math.isfinite(factor_value):
+                residuals = y_values - factor_value * x_values
+            else:
+                residuals = np.full_like(y_values, np.nan, dtype=float)
+
+            try:
+                if scale_power == 0:
+                    scaled = residuals
+                else:
+                    scaled = residuals / (x_values ** scale_power)
+            except Exception:
+                scaled = residuals
+
+            residual_std = float(np.std(residuals, ddof=1)) if residuals.size > 1 else float("nan")
+            scaled_std = float(np.std(scaled, ddof=1)) if residuals.size > 1 else float("nan")
+
+            points: List[ResidualPoint] = []
+            for x_val, resid, scaled_val in zip(x_values, residuals, scaled):
+                if not math.isfinite(float(resid)):
+                    continue
+                scaled_numeric = clean_numeric(float(scaled_val)) if math.isfinite(float(scaled_val)) else None
+                points.append(
+                    ResidualPoint(
+                        x=float(x_val),
+                        residual=float(resid),
+                        scaled=scaled_numeric,
+                    )
+                )
+
+            assumption_results.append(
+                VarianceAssumptionResiduals(
+                    assumption_id=assumption_id,
+                    title=title,
+                    factor=clean_numeric(float(factor_value)),
+                    residual_std=clean_numeric(residual_std),
+                    scaled_residual_std=clean_numeric(scaled_std),
+                    residuals=points,
+                )
+            )
+
+        comparisons.append(
+            VarianceComparison(
+                label=f"{current_age} → {next_age}",
+                age=str(current_age),
+                next_age=str(next_age),
+                assumptions=assumption_results,
+            )
+        )
+
+    return comparisons
+
+
+def build_assumption_cards(
+    linearity_test: LinearityTestSummary,
+    calendar_test: CalendarYearTestSummary,
+    diagnostics: List[DevelopmentDiagnostic],
+) -> List[AssumptionStatus]:
+    cards: List[AssumptionStatus] = []
+
+    statistic = linearity_test.statistic
+    intervals = {interval.level: interval for interval in linearity_test.intervals}
+    if statistic is None:
+        linearity_status = AssumptionStatus(
+            assumption_id="linearity",
+            title="Linearity",
+            status="review",
+            message="Insufficient data to evaluate Spearman rank correlation between successive factors.",
+        )
+    else:
+        inside_50 = False
+        inside_95 = False
+        interval_50 = intervals.get(0.50)
+        if interval_50 and interval_50.lower is not None and interval_50.upper is not None:
+            inside_50 = interval_50.lower <= statistic <= interval_50.upper
+        interval_95 = intervals.get(0.95)
+        if interval_95 and interval_95.lower is not None and interval_95.upper is not None:
+            inside_95 = interval_95.lower <= statistic <= interval_95.upper
+
+        if inside_50:
+            status = "pass"
+            message = "Spearman test statistic lies well within the central interval; subsequent factors appear uncorrelated."
+        elif inside_95:
+            status = "review"
+            message = "Weak correlation detected; inspect specific development periods for potential non-linearity."
+        else:
+            status = "fail"
+            message = "Strong correlation detected between successive development factors, indicating a linearity breach."
+
+        linearity_status = AssumptionStatus(
+            assumption_id="linearity",
+            title="Linearity",
+            status=status,
+            message=message,
+        )
+    cards.append(linearity_status)
+
+    calendar_stat = calendar_test.statistic
+    calendar_interval = calendar_test.intervals[0] if calendar_test.intervals else None
+    if calendar_stat is None:
+        calendar_status = AssumptionStatus(
+            assumption_id="independence",
+            title="Independence",
+            status="review",
+            message="Calendar year test could not be computed due to insufficient factor classifications.",
+        )
+    else:
+        within_interval = False
+        if (
+            calendar_interval
+            and calendar_interval.lower is not None
+            and calendar_interval.upper is not None
+        ):
+            within_interval = calendar_interval.lower <= calendar_stat <= calendar_interval.upper
+
+        def _find_flagged_diagonal() -> Optional[str]:
+            if not calendar_test.diagonals:
+                return None
+            target = max(
+                calendar_test.diagonals,
+                key=lambda diag: abs(diag.large - diag.small),
+            )
+            if abs(target.large - target.small) <= 1:
+                return None
+            return target.label
+
+        flagged_diagonal = _find_flagged_diagonal()
+
+        if within_interval:
+            status = "pass"
+            if flagged_diagonal:
+                message = f"No significant calendar-year effect overall, but diagonal {flagged_diagonal} deserves a quick look."
+            else:
+                message = "Calendar year effect test statistic is within its confidence band; accident years behave independently."
+        else:
+            status = "review"
+            if flagged_diagonal:
+                message = f"Calendar-year test exceeds its expectation; diagonal {flagged_diagonal} shows clustered large/small factors."
+            else:
+                message = "Calendar-year test statistic lies outside its confidence band; review diagonal patterns for operational shifts."
+
+        calendar_status = AssumptionStatus(
+            assumption_id="independence",
+            title="Independence",
+            status=status,
+            message=message,
+        )
+    cards.append(calendar_status)
+
+    variance_values = [
+        abs(diag.variance_correlation)
+        for diag in diagnostics
+        if diag.variance_correlation is not None and math.isfinite(diag.variance_correlation)
+    ]
+    if not variance_values:
+        variance_status = AssumptionStatus(
+            assumption_id="variance",
+            title="Variance",
+            status="review",
+            message="Variance proportionality cannot be assessed for the selected slice; compare residual plots manually.",
+        )
+    else:
+        max_corr = max(variance_values)
+        if max_corr < 0.3:
+            status = "pass"
+            message = "Residual spread aligns with var ∝ C_{ik} across most development periods."
+        elif max_corr < 0.6:
+            status = "review"
+            message = "Some development periods show residual fanning; compare alternative variance assumptions."
+        else:
+            status = "fail"
+            message = "Residual variance is strongly correlated with prior losses; consider alternative weighting."
+
+        variance_status = AssumptionStatus(
+            assumption_id="variance",
+            title="Variance",
+            status=status,
+            message=message,
+        )
+    cards.append(variance_status)
+
+    return cards
+
+
 def build_main_grid(
     triangle: cl.Triangle,
     full_triangle: cl.Triangle,
@@ -533,6 +1020,37 @@ def assemble_summary(
         )
     except Exception:
         diagnostics, ldf_table, cdf_table, linearity_pairs = [], [], [], []
+
+    try:
+        linearity_test = compute_linearity_spearman(triangle)
+    except Exception:
+        linearity_test = LinearityTestSummary(
+            statistic=None,
+            weights=None,
+            intervals=[],
+            pairs=[],
+        )
+
+    try:
+        calendar_test = compute_calendar_year_test(triangle)
+    except Exception:
+        calendar_test = CalendarYearTestSummary(
+            statistic=None,
+            degrees_of_freedom=None,
+            intervals=[],
+            diagonals=[],
+            heatmap=[],
+        )
+
+    try:
+        variance_comparisons = compute_variance_comparisons(triangle)
+    except Exception:
+        variance_comparisons = []
+
+    try:
+        assumption_cards = build_assumption_cards(linearity_test, calendar_test, diagnostics)
+    except Exception:
+        assumption_cards = []
     main_grid = build_main_grid(
         triangle,
         full_triangle_view,
@@ -558,4 +1076,8 @@ def assemble_summary(
         ldf_table=ldf_table,
         cdf_table=cdf_table,
         linearity_pairs=linearity_pairs,
+        assumption_cards=assumption_cards,
+        linearity_test=linearity_test,
+        calendar_test=calendar_test,
+        variance_comparisons=variance_comparisons,
     )

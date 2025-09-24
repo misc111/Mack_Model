@@ -171,6 +171,29 @@ a:hover {
     background-color: rgba(59, 130, 246, 0.08);
 }
 
+.card-header-tabs .nav-link {
+    color: var(--text-secondary);
+    border: none;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s ease, border-bottom-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+}
+
+.card-header-tabs .nav-link:hover {
+    color: var(--text-primary);
+}
+
+.card-header-tabs .nav-link.active {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent-blue);
+    background-color: transparent;
+}
+
 #main-grid-table {
     border-collapse: separate;
     border-spacing: 0;
@@ -321,4 +344,176 @@ a:hover {
 
 .small {
     letter-spacing: 0.04em;
+}
+
+.mini-metric {
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid var(--border-color);
+    border-radius: 0.85rem;
+    padding: 1rem 1.2rem;
+    height: 100%;
+}
+
+.mini-metric-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.2em;
+    color: var(--text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.mini-metric-value {
+    font-size: 1.65rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.assumption-pill {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.95rem;
+    padding: 1rem 1.25rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.assumption-pill-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.assumption-pill-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+}
+
+.assumption-pill-status i {
+    font-size: 1rem;
+}
+
+.assumption-pill-title {
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.assumption-pill-message {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.assumption-pill.status-pass {
+    border-color: rgba(16, 185, 129, 0.4);
+    background: rgba(6, 95, 70, 0.15);
+}
+
+.assumption-pill.status-pass .assumption-pill-status {
+    color: #34d399;
+}
+
+.assumption-pill.status-review {
+    border-color: rgba(250, 204, 21, 0.35);
+    background: rgba(202, 138, 4, 0.12);
+}
+
+.assumption-pill.status-review .assumption-pill-status {
+    color: #facc15;
+}
+
+.assumption-pill.status-fail {
+    border-color: rgba(248, 113, 113, 0.4);
+    background: rgba(185, 28, 28, 0.18);
+}
+
+.assumption-pill.status-fail .assumption-pill-status {
+    color: #f87171;
+}
+
+#spearman-table tbody tr td,
+#calendar-diagonals-table tbody tr td {
+    color: var(--text-secondary);
+}
+
+#calendar-heatmap-table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+#calendar-heatmap-table th,
+#calendar-heatmap-table td {
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-secondary);
+    padding: 0.45rem 0.5rem;
+    font-variant-numeric: tabular-nums;
+}
+
+#calendar-heatmap-table th:first-child {
+    position: sticky;
+    left: 0;
+    background-color: rgba(55, 65, 81, 0.85);
+    z-index: 3;
+}
+
+.heatmap-cell {
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.heatmap-l {
+    background-color: rgba(59, 130, 246, 0.25) !important;
+    color: var(--text-primary);
+}
+
+.heatmap-s {
+    background-color: rgba(248, 113, 113, 0.25) !important;
+    color: var(--text-primary);
+}
+
+.heatmap-m {
+    background-color: rgba(107, 114, 128, 0.25) !important;
+    color: var(--text-primary);
+}
+
+.variance-card {
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.9rem;
+    padding: 1rem 1.25rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.variance-card h4 {
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.variance-card p {
+    margin-bottom: 0;
+}
+
+.variance-plot {
+    min-height: 280px;
+}
+
+.variance-card .variance-plot {
+    flex: 1 1 auto;
 }
