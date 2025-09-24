@@ -15,9 +15,9 @@
     <script src="https://cdn.plot.ly/plotly-latest.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.min.js" defer></script>
-    <script defer src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
 </head>
-<body>
+<body data-summary-endpoint="{{ url_for('main.mack_distribution') }}" data-recalc-endpoint="{{ url_for('main.recalculate') }}">
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
         <div class="container">
             <a class="navbar-brand" href="#">Mack Ultimate Playground</a>
@@ -101,6 +101,7 @@
                                 <span class="badge bg-primary" id="dataset-badge">—</span>
                             </div>
                             <div class="card-body">
+                                <p class="text-muted small mb-3">Edit any observed cell to trigger an immediate Mack recalculation.</p>
                                 <div class="table-responsive">
                                     <table class="table table-sm table-striped align-middle text-end" id="triangle-table">
                                         <thead class="table-primary" id="triangle-table-head"></thead>

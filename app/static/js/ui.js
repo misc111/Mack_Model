@@ -14,57 +14,35 @@ const decimalFormatter = new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 2,
 });
 
-let currentOrigins = [];
-let currentLinearityPairs = [];
-
-function isFiniteNumber(value) {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
-function formatCurrency(value) {
-    if (!isFiniteNumber(value)) return '—';
+export function formatCurrency(value) {
+    if (!Number.isFinite(value)) return '—';
     return `$${currencyFormatter.format(value)}`;
 }
 
-function formatPercent(value) {
-    if (!isFiniteNumber(value)) return '—';
+export function formatPercent(value) {
+    if (!Number.isFinite(value)) return '—';
     return percentFormatter.format(value);
 }
 
-function formatFactor(value) {
-    if (!isFiniteNumber(value)) return '—';
+export function formatFactor(value) {
+    if (!Number.isFinite(value)) return '—';
     return factorFormatter.format(value);
 }
 
-function formatDecimal(value) {
-    if (!isFiniteNumber(value)) return '—';
+export function formatDecimal(value) {
+    if (!Number.isFinite(value)) return '—';
     return decimalFormatter.format(value);
 }
 
-async function fetchSummary(dataset, minOrigin, maxOrigin) {
-    const params = new URLSearchParams({ dataset });
-    if (minOrigin) params.set('min_origin', minOrigin);
-    if (maxOrigin) params.set('max_origin', maxOrigin);
-
-    const response = await fetch(`/api/mack-distribution?${params.toString()}`);
-    if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        const message = payload.error || `Request failed with status ${response.status}`;
-        throw new Error(message);
-    }
-    return response.json();
-}
-
-function populateOriginSelectors(origins, selectedMin, selectedMax) {
-    currentOrigins = Array.isArray(origins) ? origins.slice() : [];
+export function populateOriginSelectors(origins = [], selectedMin, selectedMax) {
     const minSelect = document.getElementById('min-origin');
     const maxSelect = document.getElementById('max-origin');
     if (!minSelect || !maxSelect) return;
 
-    const buildOptions = (select, selected) => {
+    const buildOptions = (select, target) => {
         const previousValue = select.value;
         select.innerHTML = '';
-        if (!currentOrigins.length) {
+        if (!origins.length) {
             const option = document.createElement('option');
             option.value = '';
             option.textContent = 'N/A';
@@ -72,16 +50,17 @@ function populateOriginSelectors(origins, selectedMin, selectedMax) {
             select.disabled = true;
             return;
         }
-        currentOrigins.forEach((origin) => {
+
+        origins.forEach((origin) => {
             const option = document.createElement('option');
             option.value = origin;
             option.textContent = origin;
             select.appendChild(option);
         });
-        const target = selected && currentOrigins.includes(selected)
-            ? selected
-            : (currentOrigins.includes(previousValue) ? previousValue : null);
-        select.value = target || (select === minSelect ? currentOrigins[0] : currentOrigins[currentOrigins.length - 1]);
+
+        const fallback = origins.includes(previousValue) ? previousValue : null;
+        const resolved = origins.includes(target) ? target : fallback;
+        select.value = resolved || (select === minSelect ? origins[0] : origins[origins.length - 1]);
         select.disabled = false;
     };
 
@@ -89,7 +68,7 @@ function populateOriginSelectors(origins, selectedMin, selectedMax) {
     buildOptions(maxSelect, selectedMax);
 }
 
-function updateSummaryCards(data) {
+export function updateSummaryCards(data) {
     const meanNode = document.getElementById('total-mean');
     const stdNode = document.getElementById('total-std');
     const cvNode = document.getElementById('coefficient-variation');
@@ -100,7 +79,7 @@ function updateSummaryCards(data) {
     cvNode.textContent = formatPercent(data.coefficient_of_variation);
 
     if (noteNode) {
-        if (isFiniteNumber(data.total_std_error) && data.total_std_error > 0) {
+        if (Number.isFinite(data.total_std_error) && data.total_std_error > 0) {
             const lower = Math.max(0, data.total_mean - 1.96 * data.total_std_error);
             const upper = data.total_mean + 1.96 * data.total_std_error;
             noteNode.textContent = `Approximate 95% normal interval: ${formatCurrency(lower)} – ${formatCurrency(upper)}.`;
@@ -110,7 +89,13 @@ function updateSummaryCards(data) {
     }
 }
 
-function renderTriangleTable(triangle) {
+function makeTrianglePlaceholder(body, columnCount) {
+    const row = document.createElement('tr');
+    row.innerHTML = `<td colspan="${columnCount}" class="text-center text-muted">Triangle unavailable.</td>`;
+    body.appendChild(row);
+}
+
+export function renderTriangleTable(triangle, { onCellEdit } = {}) {
     const head = document.getElementById('triangle-table-head');
     const body = document.getElementById('triangle-table-body');
     if (!head || !body) return;
@@ -118,9 +103,7 @@ function renderTriangleTable(triangle) {
     body.innerHTML = '';
 
     if (!triangle || !Array.isArray(triangle.development_ages)) {
-        const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="4" class="text-center text-muted">Triangle unavailable.</td>';
-        body.appendChild(row);
+        makeTrianglePlaceholder(body, 4);
         return;
     }
 
@@ -136,9 +119,7 @@ function renderTriangleTable(triangle) {
     head.appendChild(headerRow);
 
     if (!triangle.rows || !triangle.rows.length) {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td colspan="${headerLabels.length}" class="text-center text-muted">Triangle unavailable.</td>`;
-        body.appendChild(row);
+        makeTrianglePlaceholder(body, headerLabels.length);
         return;
     }
 
@@ -150,19 +131,50 @@ function renderTriangleTable(triangle) {
 
         (rowData.cells || []).forEach((cell) => {
             const td = document.createElement('td');
-            if (cell.status === 'observed') td.classList.add('cell-observed');
+            td.dataset.origin = rowData.origin;
+            td.dataset.age = cell.age;
+            if (cell.status === 'observed') td.classList.add('cell-observed', 'cell-editable');
             if (cell.status === 'projected') td.classList.add('cell-projected');
             if (cell.status === 'empty') td.classList.add('cell-empty');
             td.textContent = formatCurrency(cell.value);
+            td.classList.add('text-end');
+
+            if (cell.status === 'observed' && typeof onCellEdit === 'function') {
+                td.contentEditable = 'true';
+                td.spellcheck = false;
+                td.dataset.value = Number.isFinite(cell.value) ? String(cell.value) : '';
+                td.addEventListener('focus', () => {
+                    td.dataset.originalText = td.textContent;
+                    td.classList.add('cell-active');
+                    td.textContent = td.dataset.value || '';
+                });
+                td.addEventListener('blur', (event) => {
+                    td.classList.remove('cell-active');
+                    onCellEdit({
+                        origin: rowData.origin,
+                        age: cell.age,
+                        text: event.target.textContent.trim(),
+                        element: td,
+                    });
+                });
+                td.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        td.blur();
+                    }
+                });
+            }
+
             tr.appendChild(td);
         });
 
         const ultimateCell = document.createElement('td');
-        ultimateCell.classList.add('cell-observed');
+        ultimateCell.classList.add('cell-observed', 'text-end');
         ultimateCell.textContent = formatCurrency(rowData.ultimate);
         tr.appendChild(ultimateCell);
 
         const stdCell = document.createElement('td');
+        stdCell.classList.add('text-end');
         stdCell.textContent = formatCurrency(rowData.std_error);
         tr.appendChild(stdCell);
 
@@ -170,15 +182,14 @@ function renderTriangleTable(triangle) {
     });
 }
 
-function renderFactorTable(rows, bodyId, formatter, columnCount) {
+export function renderFactorTable(rows, bodyId, formatter, columnCount) {
     const tbody = document.getElementById(bodyId);
     if (!tbody) return;
     tbody.innerHTML = '';
 
     if (!rows || !rows.length) {
         const row = document.createElement('tr');
-        const colspan = columnCount || 1;
-        row.innerHTML = `<td colspan="${colspan}" class="text-center text-muted">Not available.</td>`;
+        row.innerHTML = `<td colspan="${columnCount}" class="text-center text-muted">Not available.</td>`;
         tbody.appendChild(row);
         return;
     }
@@ -201,7 +212,7 @@ function renderFactorTable(rows, bodyId, formatter, columnCount) {
     });
 }
 
-function updateDiagnosticsTable(diagnostics) {
+export function updateDiagnosticsTable(diagnostics) {
     const tbody = document.getElementById('diagnostics-table-body');
     if (!tbody) return;
     tbody.innerHTML = '';
@@ -231,14 +242,21 @@ function updateDiagnosticsTable(diagnostics) {
     });
 }
 
-function updateDatasetBadge(datasetLabel) {
+export function updateDatasetBadge(datasetLabel) {
     const badge = document.getElementById('dataset-badge');
     if (badge) {
         badge.textContent = datasetLabel || '—';
     }
 }
 
-function populateLinearitySelect(pairs, selectedLabel) {
+export function setLinearitySummaryText(content) {
+    const summaryNode = document.getElementById('linearity-summary');
+    if (summaryNode) {
+        summaryNode.textContent = content;
+    }
+}
+
+export function renderLinearitySelect(pairs, selectedLabel, onChange) {
     const select = document.getElementById('linearity-pair-select');
     if (!select) return;
     select.innerHTML = '';
@@ -249,6 +267,7 @@ function populateLinearitySelect(pairs, selectedLabel) {
         option.textContent = 'Insufficient data';
         select.appendChild(option);
         select.disabled = true;
+        if (typeof onChange === 'function') onChange('');
         return;
     }
 
@@ -259,44 +278,32 @@ function populateLinearitySelect(pairs, selectedLabel) {
         option.textContent = pair.label;
         select.appendChild(option);
     });
-    const targetLabel = selectedLabel && pairs.some((pair) => pair.label === selectedLabel)
+    const resolved = pairs.some((pair) => pair.label === selectedLabel)
         ? selectedLabel
         : pairs[0].label;
-    select.value = targetLabel;
-}
-
-function updateLinearitySummary(pair) {
-    const summaryNode = document.getElementById('linearity-summary');
-    if (!summaryNode) return;
-    if (!pair) {
-        summaryNode.textContent = 'Linearity assessment unavailable for the selected development pair.';
-        return;
+    select.value = resolved;
+    if (typeof onChange === 'function') {
+        select.onchange = (event) => onChange(event.target.value);
     }
-    const pieces = [
-        `Observations: ${pair.observations}`,
-        `R²: ${formatDecimal(pair.r_squared)}`,
-        `|Intercept| / Mean: ${formatPercent(pair.intercept_ratio)}`,
-        `Mean residual %: ${formatPercent(pair.residual_mean_ratio)}`,
-    ];
-    summaryNode.textContent = pieces.join(' · ');
 }
 
-function updateLinearityPlot(selectedLabel) {
+export function renderLinearityPlot(pair) {
     const plotContainer = document.getElementById('linearity-plot');
     if (!plotContainer) return;
 
-    const targetPair = currentLinearityPairs.find((pair) => pair.label === selectedLabel);
-    if (!targetPair) {
-        Plotly.purge(plotContainer);
-        updateLinearitySummary(null);
+    if (!pair) {
+        if (window.Plotly) {
+            window.Plotly.purge(plotContainer);
+        }
+        setLinearitySummaryText('Linearity assessment unavailable for the selected development pair.');
         return;
     }
 
     const scatterTrace = {
         type: 'scatter',
         mode: 'markers',
-        x: targetPair.points.map((point) => point.x),
-        y: targetPair.points.map((point) => point.y),
+        x: pair.points.map((point) => point.x),
+        y: pair.points.map((point) => point.y),
         marker: {
             color: '#6610f2',
             size: 8,
@@ -308,8 +315,8 @@ function updateLinearityPlot(selectedLabel) {
     const lineTrace = {
         type: 'scatter',
         mode: 'lines',
-        x: targetPair.line.map((point) => point.x),
-        y: targetPair.line.map((point) => point.y),
+        x: pair.line.map((point) => point.x),
+        y: pair.line.map((point) => point.y),
         line: {
             color: '#0d6efd',
             width: 2,
@@ -321,94 +328,39 @@ function updateLinearityPlot(selectedLabel) {
         margin: { l: 60, r: 20, t: 40, b: 60 },
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
-        title: { text: targetPair.label, font: { size: 16 } },
+        title: { text: pair.label, font: { size: 16 } },
         xaxis: { title: 'C_{ik}', tickformat: '$,~s' },
         yaxis: { title: 'C_{i,k+1}', tickformat: '$,~s' },
         legend: { orientation: 'h', yanchor: 'bottom', y: -0.2, xanchor: 'center', x: 0.5 },
     };
 
-    Plotly.newPlot(plotContainer, [scatterTrace, lineTrace], layout, { responsive: true, displaylogo: false });
-    updateLinearitySummary(targetPair);
+    if (window.Plotly) {
+        window.Plotly.newPlot(plotContainer, [scatterTrace, lineTrace], layout, { responsive: true, displaylogo: false });
+    }
+
+    const pieces = [
+        `Observations: ${pair.observations}`,
+        `R²: ${formatDecimal(pair.r_squared)}`,
+        `|Intercept| / Mean: ${formatPercent(pair.intercept_ratio)}`,
+        `Mean residual %: ${formatPercent(pair.residual_mean_ratio)}`,
+    ];
+    setLinearitySummaryText(pieces.join(' · '));
 }
 
-function handleFormSubmit(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const datasetSelect = form.querySelector('#dataset');
-    const minSelect = form.querySelector('#min-origin');
-    const maxSelect = form.querySelector('#max-origin');
-    const submitButton = form.querySelector('button[type="submit"]');
-
-    const dataset = datasetSelect.value;
-    const minOrigin = minSelect.value;
-    const maxOrigin = maxSelect.value;
-
-    if (currentOrigins.length) {
-        const minIndex = currentOrigins.indexOf(minOrigin);
-        const maxIndex = currentOrigins.indexOf(maxOrigin);
-        if (minIndex > maxIndex) {
-            alert('Oldest origin must be less than or equal to newest origin.');
-            return;
-        }
-    }
-
-    try {
-        form.classList.add('is-loading');
-        submitButton.disabled = true;
-        fetchSummary(dataset, minOrigin, maxOrigin)
-            .then((data) => renderSummary(data))
-            .catch((error) => alert(error.message))
-            .finally(() => {
-                form.classList.remove('is-loading');
-                submitButton.disabled = false;
-            });
-    } catch (error) {
-        alert(error.message);
-        form.classList.remove('is-loading');
-        submitButton.disabled = false;
-    }
+export function updateEditableCell(cell, value) {
+    if (!cell) return;
+    cell.dataset.value = Number.isFinite(value) ? String(value) : '';
+    cell.textContent = formatCurrency(value);
 }
 
-function renderSummary(data) {
-    const datasetSelect = document.getElementById('dataset');
-    if (datasetSelect && data.dataset) {
-        datasetSelect.value = data.dataset;
-    }
-    populateOriginSelectors(data.origins, data.selected_min_origin, data.selected_max_origin);
-    updateSummaryCards(data);
-    renderTriangleTable(data.triangle_table);
-    renderFactorTable(data.ldf_table, 'ldf-table-body', formatFactor, 3);
-    renderFactorTable(data.cdf_table, 'cdf-table-body', formatFactor, 2);
-    updateDiagnosticsTable(data.diagnostics);
-    updateDatasetBadge(data.dataset_label);
-
-    currentLinearityPairs = Array.isArray(data.linearity_pairs) ? data.linearity_pairs : [];
-    const select = document.getElementById('linearity-pair-select');
-    const defaultLabel = currentLinearityPairs.length ? currentLinearityPairs[0].label : '';
-    populateLinearitySelect(currentLinearityPairs, defaultLabel);
-    updateLinearityPlot(select ? select.value : defaultLabel);
+export function markCellError(cell, message) {
+    if (!cell) return;
+    cell.classList.add('cell-error');
+    cell.title = message;
 }
 
-function initialise() {
-    const form = document.getElementById('dataset-form');
-    if (form) {
-        form.addEventListener('submit', handleFormSubmit);
-    }
-
-    const linearitySelect = document.getElementById('linearity-pair-select');
-    if (linearitySelect) {
-        linearitySelect.addEventListener('change', (event) => {
-            updateLinearityPlot(event.target.value);
-        });
-    }
-
-    const datasetSelect = document.getElementById('dataset');
-    const initialDataset = datasetSelect ? datasetSelect.value : undefined;
-    fetchSummary(initialDataset)
-        .then((data) => renderSummary(data))
-        .catch((error) => alert(error.message));
+export function clearCellError(cell) {
+    if (!cell) return;
+    cell.classList.remove('cell-error');
+    cell.removeAttribute('title');
 }
-
-document.addEventListener('DOMContentLoaded', () => {
-    initialise();
-});

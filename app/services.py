@@ -1,70 +1,16 @@
 import math
-from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Optional
-
-import numpy as np
-import pandas as pd
-from flask import Flask, jsonify, render_template, request
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import chainladder as cl
+import numpy as np
+import pandas as pd
 
-
-@dataclass(frozen=True)
-class DatasetOption:
-    label: str
-    load_key: str
-    column: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class DevelopmentDiagnostic:
-    age: str
-    next_age: str
-    observations: int
-    development_factor: Optional[float]
-    intercept: Optional[float]
-    intercept_ratio: Optional[float]
-    r_squared: Optional[float]
-    intercept_t_stat: Optional[float]
-    residual_mean: Optional[float]
-    residual_mean_ratio: Optional[float]
-    variance_slope: Optional[float]
-    variance_correlation: Optional[float]
-    scaled_residual_std: Optional[float]
-
-
-@dataclass(frozen=True)
-class LinearityPair:
-    label: str
-    age: str
-    next_age: str
-    ldf: Optional[float]
-    intercept: Optional[float]
-    intercept_ratio: Optional[float]
-    r_squared: Optional[float]
-    observations: int
-    residual_mean_ratio: Optional[float]
-    points: List[Dict[str, float]]
-    line: List[Dict[str, float]]
-
-
-@dataclass
-class UltimateSummary:
-    dataset_key: str
-    dataset_label: str
-    total_mean: float
-    total_std_error: float
-    coefficient_of_variation: Optional[float]
-    origin_ultimates: List[Dict[str, float]]
-    origin_std_errors: List[Dict[str, float]]
-    diagnostics: List[DevelopmentDiagnostic]
-    origins: List[str]
-    selected_min_origin: str
-    selected_max_origin: str
-    triangle_table: Dict[str, Any]
-    ldf_table: List[Dict[str, Optional[float]]]
-    cdf_table: List[Dict[str, Optional[float]]]
-    linearity_pairs: List[LinearityPair]
+from .models import (
+    DatasetOption,
+    DevelopmentDiagnostic,
+    LinearityPair,
+    UltimateSummary,
+)
 
 
 AVAILABLE_DATASETS: Dict[str, DatasetOption] = {
@@ -94,8 +40,6 @@ AVAILABLE_DATASETS: Dict[str, DatasetOption] = {
 }
 DEFAULT_DATASET = "raa"
 
-app = Flask(__name__)
-
 
 def build_mack_pipeline() -> cl.Pipeline:
     """Create a fresh Mack pipeline so state never leaks across requests."""
@@ -117,8 +61,8 @@ def ensure_cumulative(triangle: cl.Triangle) -> cl.Triangle:
 def get_dataset_option(dataset_key: str) -> DatasetOption:
     try:
         return AVAILABLE_DATASETS[dataset_key]
-    except KeyError:
-        raise KeyError(f"Unknown dataset key '{dataset_key}'")
+    except KeyError as exc:
+        raise KeyError(f"Unknown dataset key '{dataset_key}'") from exc
 
 
 def load_triangle(dataset_key: str) -> cl.Triangle:
@@ -204,14 +148,57 @@ def clean_numeric(value: Optional[float]) -> Optional[float]:
     return float(value)
 
 
+def _get_development_position(triangle: cl.Triangle, age: int) -> Optional[int]:
+    matches: Iterable[int] = np.where(triangle.development == age)[0]
+    if len(matches) == 0:
+        return None
+    return int(matches[0])
+
+
+def apply_triangle_overrides(
+    triangle: cl.Triangle,
+    overrides: Optional[Dict[str, Dict[str, Any]]],
+    freq: Optional[str],
+) -> cl.Triangle:
+    """Return a copy of triangle with observed cells overridden by user edits."""
+    if not overrides:
+        return triangle
+
+    working = triangle.copy()
+    for origin_label, cells in overrides.items():
+        if not isinstance(cells, dict):
+            continue
+        origin_period = parse_origin_label(origin_label, freq)
+        if origin_period is None:
+            continue
+        try:
+            origin_position = int(np.where(working.origin == origin_period)[0][0])
+        except IndexError:
+            continue
+        for age_label, raw_value in cells.items():
+            try:
+                age = int(age_label)
+            except (TypeError, ValueError):
+                continue
+            development_position = _get_development_position(working, age)
+            if development_position is None:
+                continue
+            try:
+                numeric_value = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+            working.values[0, 0, origin_position, development_position] = numeric_value
+    return working
+
+
 def compute_development_diagnostics(
     triangle: cl.Triangle, development_model: cl.Development
-) -> (
+) -> Tuple[
     List[DevelopmentDiagnostic],
     List[Dict[str, Optional[float]]],
     List[Dict[str, Optional[float]]],
     List[LinearityPair],
-):
+]:
     wide = triangle.to_frame().reset_index()
     origin_col = wide.columns[0]
     development_cols = [col for col in wide.columns if col != origin_col]
@@ -436,6 +423,7 @@ def assemble_summary(
     dataset_key: str,
     min_origin: Optional[str] = None,
     max_origin: Optional[str] = None,
+    overrides: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> UltimateSummary:
     option = get_dataset_option(dataset_key)
     base_triangle = load_triangle(dataset_key)
@@ -449,7 +437,7 @@ def assemble_summary(
 
     mask = (base_triangle.origin >= min_period) & (base_triangle.origin <= max_period)
     triangle_selected = base_triangle[mask] if mask.any() else base_triangle
-    triangle = triangle_selected
+    triangle = apply_triangle_overrides(triangle_selected, overrides, freq)
 
     selected_min_origin = format_origin_label(triangle.origin.min(), freq)
     selected_max_origin = format_origin_label(triangle.origin.max(), freq)
@@ -458,7 +446,6 @@ def assemble_summary(
     development_full: cl.Development = pipeline_full.named_steps["development"]
     mack_full: cl.MackChainladder = pipeline_full.named_steps["mack"]
 
-    triangle = triangle_selected
     selected_slice: Any = mask if mask.any() else slice(None)
 
     try:
@@ -520,35 +507,3 @@ def assemble_summary(
         cdf_table=cdf_table,
         linearity_pairs=linearity_pairs,
     )
-
-
-@app.route("/")
-def index():
-    dataset_labels = {key: option.label for key, option in AVAILABLE_DATASETS.items()}
-    return render_template(
-        "index.html",
-        datasets=dataset_labels,
-        default_dataset=DEFAULT_DATASET,
-    )
-
-
-@app.route("/api/mack-distribution")
-def mack_distribution():
-    dataset = request.args.get("dataset", DEFAULT_DATASET)
-    if dataset not in AVAILABLE_DATASETS:
-        return jsonify({"error": "Unknown dataset"}), 400
-
-    min_origin = request.args.get("min_origin")
-    max_origin = request.args.get("max_origin")
-
-    summary = assemble_summary(dataset, min_origin=min_origin, max_origin=max_origin)
-
-    summary_dict = asdict(summary)
-    summary_dict["diagnostics"] = [asdict(diag) for diag in summary.diagnostics]
-    summary_dict["linearity_pairs"] = [asdict(pair) for pair in summary.linearity_pairs]
-
-    return jsonify(summary_dict)
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
