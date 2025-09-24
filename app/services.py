@@ -1,11 +1,10 @@
 import math
+from math import comb
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import chainladder as cl
 import numpy as np
 import pandas as pd
-
-from scipy.stats import chi2, norm
 
 from .models import (
     AssumptionStatus,
@@ -383,6 +382,9 @@ def compute_development_diagnostics(
 
 
 def compute_linearity_spearman(triangle: cl.Triangle) -> LinearityTestSummary:
+    """Computes Spearman's rank correlation test strictly following the methodology
+    for testing correlations between subsequent development factors in Mack (1994).
+    """
     wide = triangle.to_frame()
     try:
         wide = wide.sort_index()
@@ -391,77 +393,59 @@ def compute_linearity_spearman(triangle: cl.Triangle) -> LinearityTestSummary:
 
     development_cols = list(wide.columns)
     spearman_pairs: List[LinearitySpearmanPair] = []
-    total_weight = 0.0
-    weighted_sum = 0.0
 
-    for current_age, next_age, following_age in zip(
-        development_cols[:-2], development_cols[1:-1], development_cols[2:]
-    ):
-        subset = wide[[current_age, next_age, following_age]].dropna()
+    # Per Mack's paper, we calculate a weighted average of individual T_k stats
+    weighted_sum_of_T_k = 0.0
+    total_weight = 0.0
+
+    # Loop from the second development period to the second-to-last
+    for k in range(1, len(development_cols) - 1):
+        prev_age, current_age, next_age = development_cols[k - 1], development_cols[k], development_cols[k + 1]
+
+        subset = wide[[prev_age, current_age, next_age]].dropna()
         if subset.empty:
             continue
 
-        x_prev = subset[current_age].to_numpy(dtype=float)
-        x_curr = subset[next_age].to_numpy(dtype=float)
-        x_next = subset[following_age].to_numpy(dtype=float)
+        factors_prev_to_curr = pd.Series(subset[current_age] / subset[prev_age])
+        factors_curr_to_next = pd.Series(subset[next_age] / subset[current_age])
 
-        valid_mask = np.isfinite(x_prev) & np.isfinite(x_curr) & np.isfinite(x_next) & (x_prev != 0) & (x_curr != 0)
-        if not valid_mask.any():
-            continue
-        x_prev = x_prev[valid_mask]
-        x_curr = x_curr[valid_mask]
-        x_next = x_next[valid_mask]
-        if x_prev.size < 3:
-            continue
+        combined = pd.DataFrame({"prev": factors_prev_to_curr, "curr": factors_curr_to_next}).dropna()
+        observations = len(combined)
 
-        factors_current = x_curr / x_prev
-        factors_next = x_next / x_curr
-
-        finite_mask = np.isfinite(factors_current) & np.isfinite(factors_next)
-        factors_current = factors_current[finite_mask]
-        factors_next = factors_next[finite_mask]
-        observations = int(factors_current.size)
         if observations < 3:
             continue
 
-        series_current = pd.Series(factors_current)
-        series_next = pd.Series(factors_next)
-        ranks_current = series_current.rank(method="average")
-        ranks_next = series_next.rank(method="average")
-        rho = ranks_current.corr(ranks_next)
+        # T_k is the standard Spearman's rank correlation coefficient for the period
+        T_k = combined["prev"].rank().corr(combined["curr"].rank())
 
-        weight = max(observations - 1, 0)
-        if weight > 0 and rho is not None and math.isfinite(rho):
-            t_k = rho * math.sqrt(weight)
-            weighted_sum += t_k
-            t_value = t_k
-        else:
-            t_value = float("nan")
-        total_weight += weight
+        # The weight is defined as (I-k-1), which is the number of pairs minus one
+        weight = float(observations - 1)
+
+        if math.isfinite(T_k) and weight > 0:
+            weighted_sum_of_T_k += T_k * weight
+            total_weight += weight
 
         spearman_pairs.append(
             LinearitySpearmanPair(
-                label=f"{current_age} → {next_age}",
-                from_age=str(current_age),
-                to_age=str(next_age),
+                label=f"{prev_age}→{current_age} vs {current_age}→{next_age}",
+                from_age=str(prev_age),
+                to_age=str(current_age),
                 observations=observations,
-                spearman_rho=clean_numeric(float(rho)) if rho is not None else None,
-                t_statistic=clean_numeric(float(t_value)),
+                spearman_rho=clean_numeric(T_k),
+                t_statistic=None,
             )
         )
 
-    if total_weight > 0 and math.isfinite(weighted_sum):
-        statistic = weighted_sum / math.sqrt(total_weight)
-    else:
-        statistic = float("nan")
+    # Calculate final statistic T and its variance per the paper's specified formulas
+    statistic_T = safe_dividend(weighted_sum_of_T_k, total_weight)
+    variance_T = safe_dividend(1.0, total_weight)
 
     intervals: List[ConfidenceInterval] = []
     if total_weight > 0:
-        scale = math.sqrt(total_weight)
-        for level in (0.50, 0.95):
-            percentile = (1.0 + level) / 2.0
-            z_value = norm.ppf(percentile)
-            bound = z_value / scale
+        std_dev_T = math.sqrt(variance_T)
+        # The paper proposes a 50% confidence interval for this test
+        for level, z_score in [(0.50, 0.67), (0.95, 1.96)]:
+            bound = z_score * std_dev_T
             intervals.append(
                 ConfidenceInterval(
                     level=level,
@@ -471,14 +455,17 @@ def compute_linearity_spearman(triangle: cl.Triangle) -> LinearityTestSummary:
             )
 
     return LinearityTestSummary(
-        statistic=clean_numeric(statistic),
-        weights=clean_numeric(total_weight) if total_weight else None,
+        statistic=clean_numeric(statistic_T),
+        weights=clean_numeric(total_weight),
         intervals=intervals,
         pairs=spearman_pairs,
     )
 
 
 def compute_calendar_year_test(triangle: cl.Triangle) -> CalendarYearTestSummary:
+    """Computes the calendar year influence test strictly following the methodology
+    for testing the independence of accident years in Mack (1994).
+    """
     wide = triangle.to_frame()
     try:
         wide = wide.sort_index()
@@ -499,54 +486,35 @@ def compute_calendar_year_test(triangle: cl.Triangle) -> CalendarYearTestSummary
     for current_age, next_age in zip(development_cols[:-1], development_cols[1:]):
         age_label = f"{current_age} → {next_age}"
         factor_labels.append(age_label)
-
-        subset = wide[[current_age, next_age]].dropna()
-        if subset.empty:
+        factors = (wide[next_age] / wide[current_age]).dropna()
+        factors = factors[np.isfinite(factors)]
+        if factors.empty:
             continue
 
-        x_values = subset[current_age].to_numpy(dtype=float)
-        y_values = subset[next_age].to_numpy(dtype=float)
-        origin_values = subset.index
+        median_value = factors.median()
 
-        mask = np.isfinite(x_values) & np.isfinite(y_values) & (x_values != 0)
-        if not mask.any():
-            continue
-        x_values = x_values[mask]
-        y_values = y_values[mask]
-        origin_values = origin_values[mask]
+        for origin_value, factor in factors.items():
+            origin_label = origin_labels.get(origin_value, str(origin_value))
 
-        factors = y_values / x_values
-        finite_mask = np.isfinite(factors)
-        if not finite_mask.any():
-            continue
-        factors = factors[finite_mask]
-        origin_values = origin_values[finite_mask]
-        if factors.size == 0:
-            continue
-
-        median_value = float(np.median(factors)) if factors.size else float("nan")
-
-        for origin_value, factor in zip(origin_values, factors):
-            origin_label = origin_labels.get(origin_value, format_origin_label(origin_value, freq))
-            if not math.isfinite(factor):
-                classifications.setdefault(origin_label, {})[age_label] = None
-                continue
-
-            if math.isfinite(median_value):
-                if factor > median_value:
-                    classification = "L"
-                elif factor < median_value:
-                    classification = "S"
-                else:
-                    classification = "M"
+            if factor > median_value:
+                classification = "L"
+            elif factor < median_value:
+                classification = "S"
             else:
-                classification = None
+                classification = "M"
 
             classifications.setdefault(origin_label, {})[age_label] = classification
 
-            calendar_timestamp = pd.Timestamp(origin_value) + pd.DateOffset(months=int(next_age))
-            calendar_period = calendar_timestamp.to_period("Y")
-            calendar_label = str(calendar_period)
+            try:
+                if isinstance(origin_value, (str, int)):
+                    origin_year = pd.to_datetime(str(origin_value)).year
+                else:
+                    origin_year = origin_value.year
+                dev_period_index = development_cols.index(next_age)
+                calendar_year = origin_year + dev_period_index
+                calendar_label = str(calendar_year)
+            except Exception:
+                continue
 
             counts = diagonal_counts.setdefault(calendar_label, {"L": 0, "S": 0})
             if classification == "L":
@@ -555,61 +523,63 @@ def compute_calendar_year_test(triangle: cl.Triangle) -> CalendarYearTestSummary
                 counts["S"] += 1
 
     diagonals: List[CalendarDiagonalSummary] = []
-    statistic = 0.0
-    degrees = 0
-    for calendar_label in sorted(diagonal_counts.keys()):
-        counts = diagonal_counts[calendar_label]
-        large = int(counts.get("L", 0))
-        small = int(counts.get("S", 0))
-        total = large + small
-        if total > 0:
-            expected = total / 2.0
-            variance = total / 4.0
-            if variance > 0:
-                statistic += ((large - expected) ** 2) / variance
-                degrees += 1
+    total_z_stat = 0.0
+    total_expected_z = 0.0
+    total_variance_z = 0.0
+    total_diagonals_in_test = 0
+
+    for label in sorted(diagonal_counts.keys()):
+        counts = diagonal_counts[label]
+        large, small = counts["L"], counts["S"]
+        n = large + small
+        if n <= 1:
+            continue
+
+        z_j = float(min(large, small))
+        total_z_stat += z_j
+
+        m = math.floor((n - 1) / 2)
+        try:
+            binom_term = comb(n - 1, m)
+        except (ValueError, TypeError):
+            binom_term = 0
+
+        expected_z_j = (n / 2.0) - (binom_term * n / (2.0**n))
+        variance_z_j = (n * (n - 1) / 4.0) - (binom_term * n * (n - 1) / (2.0**n)) + expected_z_j - (expected_z_j**2)
+
+        total_expected_z += expected_z_j
+        total_variance_z += variance_z_j
+        total_diagonals_in_test += 1
+
         diagonals.append(
-            CalendarDiagonalSummary(
-                label=calendar_label,
-                large=large,
-                small=small,
-                total=total,
-            )
+            CalendarDiagonalSummary(label=label, large=large, small=small, total=n)
         )
 
     intervals: List[ConfidenceInterval] = []
-    if degrees > 0:
-        lower = chi2.ppf(0.025, degrees)
-        upper = chi2.ppf(0.975, degrees)
+    if total_variance_z > 0:
+        std_dev_z = math.sqrt(total_variance_z)
+        bound = 1.96 * std_dev_z
         intervals.append(
             ConfidenceInterval(
                 level=0.95,
-                lower=clean_numeric(float(lower)),
-                upper=clean_numeric(float(upper)),
+                lower=clean_numeric(total_expected_z - bound),
+                upper=clean_numeric(total_expected_z + bound),
             )
         )
 
     heatmap_rows: List[CalendarHeatmapRow] = []
     for origin_value in origins:
-        origin_label = origin_labels.get(origin_value, format_origin_label(origin_value, freq))
+        origin_label = origin_labels.get(origin_value, str(origin_value))
         cell_map = classifications.get(origin_label, {})
         cells = [
-            CalendarHeatmapCell(
-                age_label=age_label,
-                classification=cell_map.get(age_label),
-            )
+            CalendarHeatmapCell(age_label=age_label, classification=cell_map.get(age_label))
             for age_label in factor_labels
         ]
-        heatmap_rows.append(
-            CalendarHeatmapRow(
-                origin=origin_label,
-                cells=cells,
-            )
-        )
+        heatmap_rows.append(CalendarHeatmapRow(origin=origin_label, cells=cells))
 
     return CalendarYearTestSummary(
-        statistic=clean_numeric(statistic),
-        degrees_of_freedom=degrees or None,
+        statistic=clean_numeric(total_z_stat) if total_diagonals_in_test > 0 else None,
+        degrees_of_freedom=total_diagonals_in_test or None,
         intervals=intervals,
         diagonals=diagonals,
         heatmap=heatmap_rows,
