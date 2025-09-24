@@ -369,11 +369,13 @@ def compute_development_diagnostics(
     return diagnostics, ldf_table, cdf_table, linearity_pairs
 
 
-def build_triangle_view(
+def build_main_grid(
     triangle: cl.Triangle,
     full_triangle: cl.Triangle,
     origin_ultimates: List[Dict[str, float]],
     origin_std_errors: List[Dict[str, float]],
+    ldf_table: List[Dict[str, Optional[float]]],
+    cdf_table: List[Dict[str, Optional[float]]],
 ) -> Dict[str, Any]:
     freq = getattr(triangle.origin, "freqstr", None)
     development_ages = [int(age) for age in triangle.ddims]
@@ -413,9 +415,51 @@ def build_triangle_view(
             }
         )
 
+    development_labels = [str(age) for age in development_ages]
+    columns = ["Origin", *development_labels, "Ultimate", "Std. Error"]
+
+    ldf_lookup = {item["to_age"]: item.get("factor") for item in ldf_table if item.get("to_age")}
+    ldf_values: List[Optional[float]] = []
+    for label in development_labels:
+        factor = ldf_lookup.get(label)
+        ldf_values.append(clean_numeric(factor) if factor is not None else None)
+    ldf_values.extend([None, None])
+
+    cdf_lookup = {item["age"]: item.get("factor") for item in cdf_table if item.get("age")}
+    cdf_values: List[Optional[float]] = []
+    for label in development_labels:
+        factor = cdf_lookup.get(label)
+        cdf_values.append(clean_numeric(factor) if factor is not None else None)
+    cdf_values.extend([None, None])
+
+    factor_sections = [
+        {
+            "title": "Age-to-Age Factors",
+            "rows": [
+                {
+                    "label": "LDF",
+                    "format": "factor",
+                    "values": ldf_values,
+                }
+            ],
+        },
+        {
+            "title": "Cumulative Development Factors",
+            "rows": [
+                {
+                    "label": "CDF",
+                    "format": "factor",
+                    "values": cdf_values,
+                }
+            ],
+        },
+    ]
+
     return {
-        "development_ages": [str(age) for age in development_ages],
-        "rows": rows,
+        "columns": columns,
+        "development_ages": development_labels,
+        "triangle_rows": rows,
+        "factor_sections": factor_sections,
     }
 
 
@@ -488,7 +532,14 @@ def assemble_summary(
         )
     except Exception:
         diagnostics, ldf_table, cdf_table, linearity_pairs = [], [], [], []
-    triangle_table = build_triangle_view(triangle, full_triangle_view, origin_ultimates, origin_std_errors)
+    main_grid = build_main_grid(
+        triangle,
+        full_triangle_view,
+        origin_ultimates,
+        origin_std_errors,
+        ldf_table,
+        cdf_table,
+    )
 
     return UltimateSummary(
         dataset_key=dataset_key,
@@ -502,7 +553,7 @@ def assemble_summary(
         origins=all_origins,
         selected_min_origin=selected_min_origin,
         selected_max_origin=selected_max_origin,
-        triangle_table=triangle_table,
+        main_grid=main_grid,
         ldf_table=ldf_table,
         cdf_table=cdf_table,
         linearity_pairs=linearity_pairs,

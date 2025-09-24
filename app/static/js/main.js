@@ -1,13 +1,11 @@
 import { fetchSummary, recalcSummary } from './api.js';
 import {
     clearCellError,
-    formatFactor,
     markCellError,
     populateOriginSelectors,
-    renderFactorTable,
     renderLinearityPlot,
     renderLinearitySelect,
-    renderTriangleTable,
+    renderMainGrid,
     updateDatasetBadge,
     updateDiagnosticsTable,
     updateEditableCell,
@@ -48,18 +46,21 @@ function parseNumericInput(text) {
     return Number.isFinite(value) ? value : null;
 }
 
-function buildOverridesFromTriangle(triangle) {
+function buildOverridesFromTriangle(grid) {
     const overrides = {};
-    if (!triangle || !Array.isArray(triangle.rows)) return overrides;
+    if (!grid || !Array.isArray(grid.triangle_rows) || !Array.isArray(grid.development_ages)) {
+        return overrides;
+    }
 
-    triangle.rows.forEach((row) => {
-        if (!row || !Array.isArray(row.cells)) return;
-        const origin = row.origin;
-        overrides[origin] = overrides[origin] || {};
-        row.cells.forEach((cell) => {
-            if (cell.status === 'observed' && Number.isFinite(cell.value)) {
-                overrides[origin][cell.age] = Number(cell.value);
-            }
+    grid.triangle_rows.forEach((row) => {
+        const origin = row?.origin;
+        if (!origin || !Array.isArray(row.cells)) return;
+        grid.development_ages.forEach((age, index) => {
+            const cell = row.cells[index];
+            if (!cell || cell.status !== 'observed') return;
+            if (!Number.isFinite(cell.value)) return;
+            overrides[origin] = overrides[origin] || {};
+            overrides[origin][age] = Number(cell.value);
         });
     });
     return overrides;
@@ -89,14 +90,12 @@ function applySummary(data) {
     appState.origins = Array.isArray(data.origins) ? data.origins.slice() : [];
     appState.minOrigin = data.selected_min_origin || null;
     appState.maxOrigin = data.selected_max_origin || null;
-    appState.overrides = buildOverridesFromTriangle(data.triangle_table);
+    appState.overrides = buildOverridesFromTriangle(data.main_grid);
     appState.linearityPairs = Array.isArray(data.linearity_pairs) ? data.linearity_pairs.slice() : [];
 
     populateOriginSelectors(appState.origins, appState.minOrigin, appState.maxOrigin);
     updateSummaryCards(data);
-    renderTriangleTable(data.triangle_table, { onCellEdit: handleCellEdit });
-    renderFactorTable(data.ldf_table, 'ldf-table-body', formatFactor, 3);
-    renderFactorTable(data.cdf_table, 'cdf-table-body', formatFactor, 2);
+    renderMainGrid(data.main_grid, { onCellEdit: handleCellEdit });
     updateDiagnosticsTable(data.diagnostics);
     updateDatasetBadge(data.dataset_label);
     updateLinearitySelection(appState.linearityPairs);

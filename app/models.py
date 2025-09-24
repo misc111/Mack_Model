@@ -54,7 +54,7 @@ class UltimateSummary:
     origins: List[str]
     selected_min_origin: str
     selected_max_origin: str
-    triangle_table: Dict[str, Any]
+    main_grid: Dict[str, Any]
     ldf_table: List[Dict[str, Optional[float]]]
     cdf_table: List[Dict[str, Optional[float]]]
     linearity_pairs: List[LinearityPair]

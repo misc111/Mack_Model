@@ -4,11 +4,17 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mack Model Diagnostics</title>
+    <title>Mack Model Worksheet</title>
     <link
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
         rel="stylesheet"
         integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXRa2GtvkX04yB7+Ai"
+        crossorigin="anonymous"
+    />
+    <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css"
+        integrity="sha384-rnUg2D0OHSmHbOLAyRVgOK9jUp8qgP31EdO3nNGOf39NPliR6aBWYfKqlN0ZNmHU"
         crossorigin="anonymous"
     />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
@@ -18,73 +24,93 @@
     <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
 </head>
 <body data-summary-endpoint="{{ url_for('main.mack_distribution') }}" data-recalc-endpoint="{{ url_for('main.recalculate') }}">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
-        <div class="container">
-            <a class="navbar-brand" href="#">Mack Ultimate Playground</a>
+    <nav class="navbar navbar-dark worksheet-navbar">
+        <div class="container-xl">
+            <a class="navbar-brand d-flex align-items-center gap-2" href="#">
+                <i class="bi bi-bezier"></i>
+                <span>Mack Ultimate Worksheet</span>
+            </a>
         </div>
     </nav>
-    <main class="py-5 bg-light min-vh-100">
-        <div class="container">
-            <div class="row mb-4">
-                <div class="col-lg-8">
-                    <h1 class="display-5 fw-bold text-primary">Interrogate Mack's Assumptions</h1>
-                    <p class="lead text-muted">
-                        Explore how <strong>chainladder</strong>'s Mack model produces the central reserve estimate, review the
-                        associated standard error, and test the linearity and variance assumptions that underpin the method.
-                    </p>
-                </div>
-                <div class="col-lg-4">
-                    <div class="card shadow-sm border-0">
-                        <div class="card-body">
-                            <h5 class="card-title">Model Controls</h5>
-                            <form id="dataset-form" class="row g-3">
-                                <div class="col-12">
-                                    <label class="form-label" for="dataset">Dataset</label>
-                                    <select class="form-select" id="dataset" name="dataset">
-                                        {% for key, label in datasets.items() %}
-                                            <option value="{{ key }}" {% if key == default_dataset %}selected{% endif %}>{{ label }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label" for="min-origin">Oldest Origin</label>
-                                    <select class="form-select" id="min-origin" name="min_origin"></select>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label" for="max-origin">Newest Origin</label>
-                                    <select class="form-select" id="max-origin" name="max_origin"></select>
-                                </div>
-                                <div class="col-12 d-grid">
-                                    <button class="btn btn-primary" type="submit">Run Mack Analysis</button>
-                                </div>
-                            </form>
+
+    <main class="worksheet-main py-5">
+        <div class="container-xl worksheet-container">
+            <header class="worksheet-header mb-5">
+                <h1 class="display-5 fw-bold text-highlight d-flex align-items-center gap-3 mb-3">
+                    <i class="bi bi-columns-gap"></i>
+                    <span>Interrogate Mack's Assumptions</span>
+                </h1>
+                <p class="lead text-secondary mb-0">
+                    Run Mack on trusted benchmark triangles, edit observed values inline, and watch the downstream diagnostics react in real time.
+                </p>
+            </header>
+
+            <section class="worksheet-controls mb-5">
+                <div class="card control-card shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center gap-2 text-secondary mb-3 text-uppercase">
+                            <i class="bi bi-gear-wide-connected"></i>
+                            <span class="fw-semibold letter-spacing-sm">Model Controls</span>
                         </div>
+                        <form id="dataset-form" class="row g-3 g-md-4 align-items-end">
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="dataset">Dataset</label>
+                                <select class="form-select" id="dataset" name="dataset">
+                                    {% for key, label in datasets.items() %}
+                                        <option value="{{ key }}" {% if key == default_dataset %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="min-origin">Oldest Origin</label>
+                                <select class="form-select" id="min-origin" name="min_origin"></select>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="max-origin">Newest Origin</label>
+                                <select class="form-select" id="max-origin" name="max_origin"></select>
+                            </div>
+                            <div class="col-12 col-md-auto ms-md-auto">
+                                <button class="btn btn-primary btn-lg px-4" type="submit">
+                                    <i class="bi bi-play-circle me-2"></i>
+                                    Run Mack Analysis
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
-            </div>
+            </section>
 
-            <section class="mb-5">
-                <div class="row g-4" id="summary-cards">
+            <section class="worksheet-metrics mb-5">
+                <div class="row g-4">
                     <div class="col-md-4">
-                        <div class="card metric-card h-100 border-0 shadow-sm">
+                        <div class="card metric-card shadow-sm h-100">
                             <div class="card-body">
-                                <p class="metric-label">Total Ultimate Mean</p>
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <p class="metric-label text-uppercase mb-0">Total Ultimate Mean</p>
+                                    <i class="bi bi-cash-stack text-accent"></i>
+                                </div>
                                 <p class="metric-value" id="total-mean">—</p>
                             </div>
                         </div>
                     </div>
                     <div class="col-md-4">
-                        <div class="card metric-card h-100 border-0 shadow-sm">
+                        <div class="card metric-card shadow-sm h-100">
                             <div class="card-body">
-                                <p class="metric-label">Total Std. Error</p>
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <p class="metric-label text-uppercase mb-0">Total Std. Error</p>
+                                    <i class="bi bi-graph-up text-accent"></i>
+                                </div>
                                 <p class="metric-value" id="total-std">—</p>
                             </div>
                         </div>
                     </div>
                     <div class="col-md-4">
-                        <div class="card metric-card h-100 border-0 shadow-sm">
+                        <div class="card metric-card shadow-sm h-100">
                             <div class="card-body">
-                                <p class="metric-label">Coefficient of Variation</p>
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <p class="metric-label text-uppercase mb-0">Coefficient of Variation</p>
+                                    <i class="bi bi-percentage text-accent"></i>
+                                </div>
                                 <p class="metric-value" id="coefficient-variation">—</p>
                             </div>
                         </div>
@@ -92,79 +118,42 @@
                 </div>
             </section>
 
-            <section class="mb-5">
-                <div class="row g-4">
-                    <div class="col-lg-8">
-                        <div class="card border-0 shadow-sm h-100">
-                            <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
-                                <h5 class="card-title mb-0">Cumulative Triangle</h5>
-                                <span class="badge bg-primary" id="dataset-badge">—</span>
-                            </div>
-                            <div class="card-body">
-                                <p class="text-muted small mb-3">Edit any observed cell to trigger an immediate Mack recalculation.</p>
-                                <div class="table-responsive">
-                                    <table class="table table-sm table-striped align-middle text-end" id="triangle-table">
-                                        <thead class="table-primary" id="triangle-table-head"></thead>
-                                        <tbody id="triangle-table-body"></tbody>
-                                    </table>
-                                </div>
-                            </div>
+            <section class="worksheet-grid mb-5">
+                <div class="card worksheet-card shadow-sm">
+                    <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-table"></i>
+                            <h2 class="card-title mb-0">Cumulative Triangle Worksheet</h2>
                         </div>
+                        <span class="badge rounded-pill bg-accent" id="dataset-badge">—</span>
                     </div>
-                    <div class="col-lg-4">
-                        <div class="card border-0 shadow-sm h-100">
-                            <div class="card-header bg-white border-0">
-                                <h5 class="card-title mb-0">Age-to-Age Factors</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-sm align-middle" id="ldf-table">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th scope="col">From</th>
-                                                <th scope="col">To</th>
-                                                <th scope="col" class="text-end">Factor</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="ldf-table-body"></tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="card border-0 shadow-sm h-100 mt-4">
-                            <div class="card-header bg-white border-0">
-                                <h5 class="card-title mb-0">Cumulative Development Factors</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-sm align-middle" id="cdf-table">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th scope="col">Age</th>
-                                                <th scope="col" class="text-end">Factor</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="cdf-table-body"></tbody>
-                                    </table>
-                                </div>
-                            </div>
+                    <div class="card-body">
+                        <p class="text-secondary small mb-3">
+                            Edit any observed cell to trigger an immediate Mack recalculation across the worksheet. Projected values remain locked for clarity.
+                        </p>
+                        <div class="table-responsive worksheet-grid-wrapper">
+                            <table class="table mb-0" id="main-grid-table">
+                                <thead id="main-grid-head"></thead>
+                                <tbody id="main-grid-body"></tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <section class="mb-5">
-                <div class="card border-0 shadow-sm">
-                    <div class="card-header bg-white border-0">
-                        <h5 class="card-title mb-0">Linearity &amp; Variance Diagnostics</h5>
+            <section class="worksheet-diagnostics mb-5">
+                <div class="card shadow-sm">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <i class="bi bi-clipboard-data"></i>
+                        <h2 class="card-title mb-0">Linearity &amp; Variance Diagnostics</h2>
                     </div>
                     <div class="card-body">
-                        <p class="text-muted small" id="diagnostic-note">
-                            The table below compares each development step against Mack's assumptions. Reload a dataset to refresh the diagnostics.
+                        <p class="text-secondary small" id="diagnostic-note">
+                            Reload a dataset to refresh diagnostics and assess whether Mack's core assumptions hold across development steps.
                         </p>
                         <div class="table-responsive">
-                            <table class="table table-sm table-hover align-middle mb-0">
-                                <thead class="table-primary">
+                            <table class="table table-hover align-middle mb-0" id="diagnostics-table">
+                                <thead>
                                     <tr>
                                         <th scope="col">Development Pair</th>
                                         <th scope="col">Obs</th>
@@ -184,15 +173,18 @@
                 </div>
             </section>
 
-            <section class="mb-5">
-                <div class="card border-0 shadow-sm">
-                    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
-                        <h5 class="card-title mb-0">Assumption 1 Test: Linearity</h5>
+            <section class="worksheet-linearity">
+                <div class="card shadow-sm">
+                    <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-braces"></i>
+                            <h2 class="card-title mb-0">Assumption 1: Linearity Check</h2>
+                        </div>
                         <select class="form-select form-select-sm w-auto" id="linearity-pair-select"></select>
                     </div>
                     <div class="card-body">
                         <div id="linearity-plot" class="chart mb-3"></div>
-                        <p class="text-muted small" id="linearity-summary">
+                        <p class="text-secondary small" id="linearity-summary">
                             Select a development pair to view cumulative losses versus next-age losses with the Mack volume-weighted factor.
                         </p>
                     </div>

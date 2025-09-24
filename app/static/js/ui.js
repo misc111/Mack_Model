@@ -34,6 +34,21 @@ export function formatDecimal(value) {
     return decimalFormatter.format(value);
 }
 
+function formatValueByType(type, value) {
+    if (!Number.isFinite(value)) return '—';
+    switch (type) {
+        case 'currency':
+            return formatCurrency(value);
+        case 'percent':
+            return formatPercent(value);
+        case 'decimal':
+            return formatDecimal(value);
+        case 'factor':
+        default:
+            return formatFactor(value);
+    }
+}
+
 export function populateOriginSelectors(origins = [], selectedMin, selectedMax) {
     const minSelect = document.getElementById('min-origin');
     const maxSelect = document.getElementById('max-origin');
@@ -95,21 +110,20 @@ function makeTrianglePlaceholder(body, columnCount) {
     body.appendChild(row);
 }
 
-export function renderTriangleTable(triangle, { onCellEdit } = {}) {
-    const head = document.getElementById('triangle-table-head');
-    const body = document.getElementById('triangle-table-body');
+export function renderMainGrid(grid, { onCellEdit } = {}) {
+    const head = document.getElementById('main-grid-head');
+    const body = document.getElementById('main-grid-body');
     if (!head || !body) return;
     head.innerHTML = '';
     body.innerHTML = '';
 
-    if (!triangle || !Array.isArray(triangle.development_ages)) {
+    if (!grid || !Array.isArray(grid.columns)) {
         makeTrianglePlaceholder(body, 4);
         return;
     }
 
     const headerRow = document.createElement('tr');
-    const headerLabels = ['Origin', ...triangle.development_ages, 'Ultimate', 'Std. Error'];
-    headerLabels.forEach((label, index) => {
+    grid.columns.forEach((label, index) => {
         const th = document.createElement('th');
         th.scope = 'col';
         th.textContent = label;
@@ -118,21 +132,27 @@ export function renderTriangleTable(triangle, { onCellEdit } = {}) {
     });
     head.appendChild(headerRow);
 
-    if (!triangle.rows || !triangle.rows.length) {
-        makeTrianglePlaceholder(body, headerLabels.length);
-        return;
+    const developmentAges = Array.isArray(grid.development_ages) ? grid.development_ages : [];
+    const triangleRows = Array.isArray(grid.triangle_rows) ? grid.triangle_rows : [];
+
+    if (!triangleRows.length) {
+        makeTrianglePlaceholder(body, grid.columns.length);
     }
 
-    triangle.rows.forEach((rowData) => {
+    triangleRows.forEach((rowData) => {
         const tr = document.createElement('tr');
-        const originCell = document.createElement('td');
+        tr.classList.add('triangle-row');
+
+        const originCell = document.createElement('th');
+        originCell.scope = 'row';
         originCell.textContent = rowData.origin;
         tr.appendChild(originCell);
 
-        (rowData.cells || []).forEach((cell) => {
+        developmentAges.forEach((age, index) => {
+            const cell = (rowData.cells || [])[index] || {};
             const td = document.createElement('td');
             td.dataset.origin = rowData.origin;
-            td.dataset.age = cell.age;
+            td.dataset.age = age;
             if (cell.status === 'observed') td.classList.add('cell-observed', 'cell-editable');
             if (cell.status === 'projected') td.classList.add('cell-projected');
             if (cell.status === 'empty') td.classList.add('cell-empty');
@@ -152,7 +172,7 @@ export function renderTriangleTable(triangle, { onCellEdit } = {}) {
                     td.classList.remove('cell-active');
                     onCellEdit({
                         origin: rowData.origin,
-                        age: cell.age,
+                        age,
                         text: event.target.textContent.trim(),
                         element: td,
                     });
@@ -180,35 +200,37 @@ export function renderTriangleTable(triangle, { onCellEdit } = {}) {
 
         body.appendChild(tr);
     });
-}
 
-export function renderFactorTable(rows, bodyId, formatter, columnCount) {
-    const tbody = document.getElementById(bodyId);
-    if (!tbody) return;
-    tbody.innerHTML = '';
+    const factorSections = Array.isArray(grid.factor_sections) ? grid.factor_sections : [];
+    factorSections.forEach((section) => {
+        const header = document.createElement('tr');
+        header.classList.add('factor-header-row');
+        const headerCell = document.createElement('td');
+        headerCell.colSpan = grid.columns.length;
+        headerCell.textContent = section.title || '';
+        header.appendChild(headerCell);
+        body.appendChild(header);
 
-    if (!rows || !rows.length) {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td colspan="${columnCount}" class="text-center text-muted">Not available.</td>`;
-        tbody.appendChild(row);
-        return;
-    }
+        (section.rows || []).forEach((factorRow) => {
+            const tr = document.createElement('tr');
+            tr.classList.add('factor-data-row');
+            const labelCell = document.createElement('th');
+            labelCell.scope = 'row';
+            labelCell.textContent = factorRow.label || '';
+            tr.appendChild(labelCell);
 
-    rows.forEach((item) => {
-        const tr = document.createElement('tr');
-        if ('from_age' in item) {
-            tr.innerHTML = `
-                <td>${item.from_age}</td>
-                <td>${item.to_age}</td>
-                <td class="text-end">${formatter(item.factor)}</td>
-            `;
-        } else {
-            tr.innerHTML = `
-                <td>${item.age}</td>
-                <td class="text-end">${formatter(item.factor)}</td>
-            `;
-        }
-        tbody.appendChild(tr);
+            const values = Array.isArray(factorRow.values) ? factorRow.values : [];
+            const formatter = factorRow.format || 'factor';
+            const columnsExcludingOrigin = grid.columns.length - 1;
+            for (let i = 0; i < columnsExcludingOrigin; i += 1) {
+                const td = document.createElement('td');
+                td.classList.add('text-end');
+                const value = values[i];
+                td.textContent = formatValueByType(formatter, value);
+                tr.appendChild(td);
+            }
+            body.appendChild(tr);
+        });
     });
 }
 
