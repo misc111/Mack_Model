@@ -362,7 +362,7 @@ def compute_development_diagnostics(
             )
         )
 
-    for age in development_cols[:-1]:
+    for age in development_cols:
         cdf_value = float(cdf_series.get(age, np.nan)) if not cdf_series.empty else float("nan")
         cdf_table.append({"age": str(age), "factor": clean_numeric(cdf_value)})
 
@@ -418,11 +418,12 @@ def build_main_grid(
     development_labels = [str(age) for age in development_ages]
     columns = ["Origin", *development_labels, "Ultimate", "Std. Error"]
 
-    ldf_lookup = {item["to_age"]: item.get("factor") for item in ldf_table if item.get("to_age")}
-    ldf_values: List[Optional[float]] = []
-    for label in development_labels:
-        factor = ldf_lookup.get(label)
-        ldf_values.append(clean_numeric(factor) if factor is not None else None)
+    # Extract factors directly so the row aligns with the first development column.
+    ldf_values: List[Optional[float]] = [clean_numeric(item.get("factor")) for item in ldf_table]
+
+    padding_needed = len(development_labels) - len(ldf_values)
+    if padding_needed > 0:
+        ldf_values.extend([None] * padding_needed)
     ldf_values.extend([None, None])
 
     cdf_lookup = {item["age"]: item.get("factor") for item in cdf_table if item.get("age")}
